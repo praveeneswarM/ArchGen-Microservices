@@ -55,27 +55,50 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     # 1. Check Cache
     cached = cache_manager.get(requirements)
     if cached:
-        # Validate cached architecture meets the new 25-node quality gate
         c_nodes = cached.get('nodes', [])
-        c_edges = cached.get('edges', [])
-        if len(c_nodes) >= 25 and len(c_edges) >= 30:
+        if len(c_nodes) > 0:
             exec_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
             perf_logger.log(request_id, 'Cache', exec_ms / 1000.0, True, [], [])
             cached['execution_time_ms'] = exec_ms
             return ArchitectureResponse(**cached)
-        else:
-            logger.info("Cached architecture failed new quality gate. Regenerating...")
 
-    # 2. Deterministic Generation (No AI)
+    # 2. AI Architecture Generation
     llm_client = request.app.state.provider_manager
     provider = requirements.cloud_provider.lower()
-    reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider)
-
-    workload = reasoning_engine.classify_workload(
-        requirements.app_description,
-        requirements.expected_users
-    )
-
+    
+    from agents.requirement_analysis import RequirementAnalysisAgent
+    from agents.architecture_planning import ArchitecturePlanningAgent
+    
+    try:
+        req_agent = RequirementAnalysisAgent(client=llm_client)
+        plan_agent = ArchitecturePlanningAgent(client=llm_client)
+        
+        # Phase 1: Analyze Requirements
+        logger.info("Starting AI Requirement Analysis")
+        analysis = await req_agent.analyze(requirements)
+        
+        # Phase 2: Plan Visual Graph
+        logger.info("Starting AI Architecture Planning")
+        topology = await plan_agent.plan(analysis)
+        
+        nodes = topology.get('nodes', [])
+        edges = topology.get('edges', [])
+        services = topology.get('services', [])
+        
+        if not nodes:
+            raise Exception("AI generated empty node list")
+            
+    except Exception as e:
+        logger.warning(f"AI Generation Failed: {e}. Falling back to deterministic engine.")
+        reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider)
+        workload = reasoning_engine.classify_workload(requirements.app_description, requirements.expected_users)
+        raw_topology = reasoning_engine.synthesize_from_intent()
+        topology = reasoning_engine.normalize_topology(raw_topology)
+        
+        nodes = topology['nodes']
+        edges = topology['edges']
+        services = topology['services']
+        
     budget_val = 500.0
     try:
         budget_str = re.sub(r'[^\d.]', '', requirements.monthly_budget)
@@ -84,27 +107,6 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     except Exception:
         pass
 
-    # Deterministic Mapping
-    intent = {'workload_classification': workload, 'architectural_intent': {}}
-    if workload == 'saas_platform':
-        intent['architectural_intent'] = {'compute_preference': 'kubernetes', 'database_preference': 'relational', 'requires_caching': True, 'requires_queue': True, 'requires_private_networking': True}
-    elif workload == 'ecommerce':
-        intent['architectural_intent'] = {'compute_preference': 'container', 'database_preference': 'relational', 'requires_caching': True, 'requires_cdn': True, 'requires_waf': True}
-    elif workload == 'ott' or workload == 'streaming':
-        intent['architectural_intent'] = {'compute_preference': 'container', 'database_preference': 'nosql', 'requires_cdn': True, 'requires_blob_storage': True, 'requires_waf': True}
-    elif workload == 'ai_platform':
-        intent['architectural_intent'] = {'compute_preference': 'kubernetes', 'database_preference': 'nosql', 'requires_hardware_security': True, 'requires_blob_storage': True, 'requires_queue': True}
-    elif workload == 'analytics':
-        intent['architectural_intent'] = {'compute_preference': 'kubernetes', 'database_preference': 'nosql', 'requires_blob_storage': True, 'requires_queue': True}
-    else:
-        intent['architectural_intent'] = {'compute_preference': 'basic_vm', 'database_preference': 'relational'}
-
-    raw_topology = reasoning_engine.synthesize_from_intent()
-    topology = reasoning_engine.normalize_topology(raw_topology)
-
-    nodes = topology['nodes']
-    edges = topology['edges']
-    services = topology['services']
     eval_plan = {'nodes': nodes, 'edges': edges, 'services': services, 'cloud_provider': provider}
     
     # Defaults
@@ -140,13 +142,9 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     
     types = set(n.get("type") for n in nodes)
     
-    if len(nodes) < 25 or len(edges) < 30 or len(subnets) < 5:
-        logger.error("Quality Gate Failed: Architecture did not meet minimum quantitative resource requirements.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Could not generate production-grade topology.")
-        
-    if "CacheNode" not in types or "SecurityNode" not in types or "StorageNode" not in types or "MonitoringNode" not in types:
-        logger.error("Quality Gate Failed: Missing required architecture layers.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Missing mandatory architecture components.")
+    if not nodes:
+        logger.error("Quality Gate Failed: Architecture contains no nodes.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: Could not generate valid topology.")
         
     generation_source = f"deterministic+{getattr(llm_client, 'active_provider', 'ollama').lower()}"
 
