@@ -17,26 +17,41 @@ All services are Docker‑ready and can be started individually or together usin
 ## 🏛️ Architecture Diagram
 
 ```mermaid
-flowchart LR
-    UI[Browser / Next.js UI] --> GW[api‑gateway (8080)]
-    GW --> AS[auth‑service]
-    GW --> PS[project‑service]
-    GW --> ARS[architecture‑service]
-    AS & PS & ARS --> DB[(MongoDB)]
+graph TB
+    classDef frontend fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff;
+    classDef gateway fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff;
+    classDef service fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff;
+    classDef database fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff;
+
+    subgraph Client Layer
+        UI[Next.js Frontend UI<br/>Port 3000]:::frontend
+    end
+
+    subgraph API Gateway Layer
+        GW[FastAPI API Gateway<br/>Port 8080]:::gateway
+    end
+
+    subgraph Microservices Layer
+        AS[Auth Service<br/>Port 8001]:::service
+        PS[Project Service<br/>Port 8002]:::service
+        ARS[Architecture Service<br/>Port 8003]:::service
+    end
+
+    subgraph Data Layer
+        DB[(MongoDB<br/>Port 27017)]:::database
+    end
+
+    UI -->|REST / JSON| GW
+    GW -->|Route /auth| AS
+    GW -->|Route /projects| PS
+    GW -->|Route /architecture| ARS
+    
+    AS -->|Read / Write| DB
+    PS -->|Read / Write| DB
+    ARS -->|Read / Write| DB
 ```
 
-You can render this diagram as an image with the **Mermaid CLI** (or any online Mermaid renderer). Example command:
-
-```bash
-# Install Mermaid CLI globally (requires Node.js)
-npm i -g @mermaid-js/mermaid-cli
-# Save the diagram text to a file (e.g., diagram.mmd) and generate PNG
-mmdc -i diagram.mmd -o arch-diagram.png
-```
-
-Then place `arch-diagram.png` in this directory and reference it below:
-
-![Architecture Diagram](arch-diagram.png)
+*(GitHub natively renders the Mermaid diagram above. You do not need to manually generate an image file unless deploying documentation elsewhere.)*
 
 ---
 
