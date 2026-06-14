@@ -7,6 +7,12 @@ class RequirementInput(BaseModel):
     monthly_budget: str
     cloud_provider: str
     additional_notes: Optional[str] = None
+    application_type: Optional[str] = None
+    scalability_preference: Optional[str] = None
+    security_level: Optional[str] = None
+    database_type: Optional[str] = None
+    traffic_expectation: Optional[str] = None
+    architecture_preference: Optional[str] = None
 
 class ArchitectureResponse(BaseModel):
     nodes: List[Dict[str, Any]]
