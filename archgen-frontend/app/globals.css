@@ -90,3 +90,10 @@ body {
     stroke-dashoffset: 0;
   }
 }
+
+@media print {
+  .no-print { display: none !important; }
+  .react-flow { height: 100vh !important; width: 100vw !important; }
+  @page { size: landscape; margin: 0; }
+  body { margin: 0; padding: 0; }
+}

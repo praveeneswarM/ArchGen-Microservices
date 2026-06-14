@@ -85,22 +85,36 @@ export async function generateArchitecture(
   input: RequirementInput
 ): Promise<ArchitectureResponse> {
   log("Generating architecture", input);
-  const response = await fetch(`${API_BASE_URL}/api/generate-architecture`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds timeout
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/generate-architecture`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Failed to generate architecture: ${errorText || response.statusText}`
-    );
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to generate architecture: ${errorText || response.statusText}`
+      );
+    }
+
+    const data: ArchitectureResponse = await response.json();
+    log("Architecture generated", { nodes: data.nodes.length, edges: data.edges.length });
+    return data;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error("Architecture generation timed out after 90 seconds. Please try again.");
+    }
+    throw err;
   }
-
-  const data: ArchitectureResponse = await response.json();
-  log("Architecture generated", { nodes: data.nodes.length, edges: data.edges.length });
-  return data;
 }
 
 export async function generateTerraform(

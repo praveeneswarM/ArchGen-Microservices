@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends, Header, status
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from bson import ObjectId
-from .db import get_database
-from shared.auth.auth_helper import decode_token
+from db import get_database
+from utils.auth_helper import decode_token
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 

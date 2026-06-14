@@ -81,8 +81,13 @@ export interface ArchitectureResponse {
   explanation: string;
   alternatives_considered: string;
   justification_for_choices: string;
-  terraform_modules: string[];
+  terraform_modules?: string[];
   execution_time_ms?: number;
+  generation_source?: string;
+  provider?: string;
+  node_count?: number;
+  edge_count?: number;
+  subnet_count?: number;
 }
 
 export interface TerraformRequest {

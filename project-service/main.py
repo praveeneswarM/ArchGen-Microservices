@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from .routes.projects import router as projects_router
+from routes.projects import router as projects_router
 
 app = FastAPI(title="Project Service", version="1.0.0")
 
@@ -7,7 +7,7 @@ app = FastAPI(title="Project Service", version="1.0.0")
 app.include_router(projects_router)
 
 # Startup and shutdown events to manage DB connection
-from .db import db_manager
+from db import db_manager
 
 @app.on_event("startup")
 async def startup_event():

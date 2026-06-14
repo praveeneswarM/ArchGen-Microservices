@@ -3,7 +3,7 @@ import uuid
 import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from .utils.correlation import get_or_set_correlation_id
+from utils.correlation import get_or_set_correlation_id
 from loguru import logger
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -34,6 +34,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
 def add_logging(app):
     # Configure loguru if not already configured
-    if not logger.handlers:
-        logger.add("gateway.log", rotation="10 MB", level="INFO", format="{time} | {level} | {message}")
+    try:
+        logger.remove(0)
+    except ValueError:
+        pass
+    logger.add("gateway.log", rotation="10 MB", level="INFO", format="{time} | {level} | {message}")
     app.add_middleware(LoggingMiddleware)

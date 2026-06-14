@@ -90,6 +90,7 @@ NodeContainer.displayName = "NodeContainer";
 // Render corporate Azure nodes
 export const GatewayNode = memo(({ id, data }: any) => (
   <div className="relative">
+    <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
     <Handle type="source" position={Position.Bottom} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
     <NodeContainer
       id={id}
@@ -141,6 +142,7 @@ BackendNode.displayName = "BackendNode";
 export const DatabaseNode = memo(({ id, data }: any) => (
   <div className="relative">
     <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
+    <Handle type="source" position={Position.Bottom} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
     <NodeContainer
       id={id}
       label={data.label}
@@ -157,6 +159,7 @@ DatabaseNode.displayName = "DatabaseNode";
 export const CacheNode = memo(({ id, data }: any) => (
   <div className="relative">
     <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
+    <Handle type="source" position={Position.Bottom} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
     <NodeContainer
       id={id}
       label={data.label}
@@ -173,6 +176,7 @@ CacheNode.displayName = "CacheNode";
 export const StorageNode = memo(({ id, data }: any) => (
   <div className="relative">
     <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
+    <Handle type="source" position={Position.Bottom} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
     <NodeContainer
       id={id}
       label={data.label}
@@ -189,6 +193,7 @@ StorageNode.displayName = "StorageNode";
 export const SecurityNode = memo(({ id, data }: any) => (
   <div className="relative">
     <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
+    <Handle type="source" position={Position.Bottom} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
     <NodeContainer
       id={id}
       label={data.label}
@@ -205,6 +210,7 @@ SecurityNode.displayName = "SecurityNode";
 export const MonitoringNode = memo(({ id, data }: any) => (
   <div className="relative">
     <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
+    <Handle type="source" position={Position.Bottom} className="w-1.5 h-1.5 !bg-slate-500 !border-slate-600" />
     <NodeContainer
       id={id}
       label={data.label}

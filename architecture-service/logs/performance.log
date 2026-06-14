@@ -1,0 +1,13 @@
+{'timestamp': 1781430246.354225, 'request_id': 'e2d5e791-3d5d-49af-b703-e1e0271b00ab', 'provider': 'Ollama', 'duration_ms': 20969, 'cache_hit': False, 'fallback_chain': ['Ollama', 'Mock'], 'errors': []}
+{'timestamp': 1781430660.3439636, 'request_id': 'e54ac33f-50d9-42ba-b538-4a93ebd0a480', 'provider': 'Ollama', 'duration_ms': 21093, 'cache_hit': False, 'fallback_chain': ['Ollama', 'Mock'], 'errors': []}
+{'timestamp': 1781430983.3458002, 'request_id': '941c5c5a-be7b-48dd-95df-40cb3e53687a', 'provider': 'Ollama', 'duration_ms': 20936, 'cache_hit': False, 'fallback_chain': ['Ollama', 'Mock'], 'errors': []}
+{'timestamp': 1781431080.3546665, 'request_id': '00caf270-18f5-43ea-a04c-1aceb790a347', 'provider': 'Ollama', 'duration_ms': 20389, 'cache_hit': False, 'fallback_chain': ['Ollama', 'Mock'], 'errors': []}
+{'timestamp': 1781431779.3549597, 'request_id': '3d677806-d240-4e8e-95fd-1688a94be992', 'provider': 'Ollama', 'duration_ms': 20922, 'cache_hit': False, 'fallback_chain': ['Ollama', 'Mock'], 'errors': []}
+{'timestamp': 1781431876.3423831, 'request_id': '66009acf-adcd-43e4-abaa-a5635d64ee81', 'provider': 'Ollama', 'duration_ms': 20311, 'cache_hit': False, 'fallback_chain': ['Ollama', 'Mock'], 'errors': []}
+{'timestamp': 1781432412.5762997, 'request_id': '7611c2f0-9892-427e-974c-946623b0c943', 'provider': 'Cache', 'duration_ms': 0, 'cache_hit': True, 'fallback_chain': [], 'errors': []}
+{'timestamp': 1781432434.548514, 'request_id': '02ef54e6-307c-41d3-a0f7-60e74502a9ef', 'provider': 'Cache', 'duration_ms': 0, 'cache_hit': True, 'fallback_chain': [], 'errors': []}
+{'timestamp': 1781433076.34923, 'request_id': 'c87a46b3-ff9c-4347-a5e9-51891433abff', 'provider': 'Cache', 'duration_ms': 0, 'cache_hit': True, 'fallback_chain': [], 'errors': []}
+{'timestamp': 1781433219.1857142, 'request_id': '5b9dd819-3056-4496-a561-511e43712556', 'provider': 'Cache', 'duration_ms': 0, 'cache_hit': True, 'fallback_chain': [], 'errors': []}
+{'timestamp': 1781433590.4754705, 'request_id': 'bbe055ff-161d-4349-b5db-b688e85c1e39', 'provider': 'Cache', 'duration_ms': 0, 'cache_hit': True, 'fallback_chain': [], 'errors': []}
+{'timestamp': 1781433777.7616317, 'request_id': '446db851-a919-4ba5-a36e-dd88f8f17710', 'provider': 'Cache', 'duration_ms': 0, 'cache_hit': True, 'fallback_chain': [], 'errors': []}
+{'timestamp': 1781434375.3409383, 'request_id': '35bb2b2e-437e-4ff6-bf3e-c71576cb4376', 'provider': 'Ollama', 'duration_ms': 20702, 'cache_hit': False, 'fallback_chain': ['Ollama', 'Mock'], 'errors': []}

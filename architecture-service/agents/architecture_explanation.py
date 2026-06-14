@@ -12,12 +12,41 @@ class ArchitectureExplanationAgent(BaseAgent):
             client=client
         )
 
-    async def explain(self, plan: Dict[str, Any], raw_requirements: Dict[str, Any]) -> Dict[str, Any]:
+    async def explain(self, plan: Dict[str, Any], raw_requirements: Any) -> Dict[str, Any]:
         """
         Explains architectural trade-offs and decisions.
         """
+        # Handle string or dict requirements
+        app_desc = ""
+        sec_reqs = ""
+        perf_reqs = ""
+        tech_cons = ""
+        cloud_prov = plan.get("cloud_provider", "azure")
+
+        if isinstance(raw_requirements, dict):
+            app_desc = raw_requirements.get("app_description", "")
+            sec_reqs = raw_requirements.get("security_requirements", "")
+            perf_reqs = raw_requirements.get("performance_requirements", "")
+            tech_cons = raw_requirements.get("technical_constraints", "")
+            cloud_prov = raw_requirements.get("cloud_provider", cloud_prov)
+        else:
+            app_desc = str(raw_requirements)
+
+        # Format system prompt with requirements
+        try:
+            self.system_prompt = self.system_prompt.format(
+                application_description=app_desc,
+                security_requirements=sec_reqs,
+                performance_requirements=perf_reqs,
+                technical_constraints=tech_cons,
+                cloud_provider=cloud_prov
+            )
+        except Exception as e:
+            pass # Fallback to unformatted if keys mismatch
+
         user_prompt = (
             f"Planned Architecture:\n{json.dumps(plan, indent=2)}\n\n"
-            f"Raw User Requirements:\n{json.dumps(raw_requirements, indent=2)}"
+            f"Please generate the complete production-ready cloud architecture document as specified in your instructions. "
+            f"Ensure your final response includes the required JSON block for the Diagram Data."
         )
         return await self.execute(user_prompt)

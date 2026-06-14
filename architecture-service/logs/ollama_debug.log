@@ -1,0 +1,961 @@
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 216
+RAW RESPONSE:
+{"architecture": {"nodes": [], "services": []}}
+RESP LEN: 47
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 4234
+RAW RESPONSE:
+{
+  "nodes": [
+    {
+      "id": "vpc-group",
+      "type": "NetworkGroupNode",
+      "position": {
+        "x": -60,
+        "y": 160
+      },
+      "data": {
+        "label": "Secure Virtual Network (VPC/VNet)",
+        "width": 1120,
+        "height": 610,
+        "cost": "~$25/mo",
+        "typeSubText": "azurerm_resource"
+      },
+      "zIndex": -1,
+      "draggable": false,
+      "selectable": false,
+      "width": 1120,
+      "height": 610
+    },
+    {
+      "id": "gateway-node",
+      "type": "GatewayNode",
+      "data": {
+        "label": "gateway",
+        "status": "active",
+        "cost": "~$60/mo",
+        "typeSubText": "azurerm_application_gateway"
+      },
+      "position": {
+        "x": 360,
+        "y": 80
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "frontend-node",
+      "type": "FrontendNode",
+      "data": {
+        "label": "frontend",
+        "status": "active",
+        "cost": "~$30/mo",
+        "typeSubText": "azurerm_static_web_app"
+      },
+      "position": {
+        "x": 360,
+        "y": 260
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "backend-node",
+      "type": "BackendNode",
+      "data": {
+        "label": "compute_k8s",
+        "status": "active",
+        "cost": "~$75/mo",
+        "typeSubText": "azurerm_container_app"
+      },
+      "position": {
+        "x": 190,
+        "y": 440
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "queue-node",
+      "type": "BackendNode",
+      "data": {
+        "label": "queue",
+        "status": "active",
+        "cost": "~$75/mo",
+        "typeSubText": "azurerm_container_app"
+      },
+      "position": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "dragging": true,
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "cache-node",
+      "type": "CacheNode",
+      "data": {
+        "label": "cache",
+        "status": "active",
+        "cost": "~$45/mo",
+        "typeSubText": "azurerm_redis_cache"
+      },
+      "position": {
+        "x": 20,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "database-node",
+      "type": "DatabaseNode",
+      "data": {
+        "label": "database_relational",
+        "status": "active",
+        "cost": "~$115/mo",
+        "typeSubText": "azurerm_postgresql_flexible_server"
+      },
+      "position": {
+        "x": 360,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "monitoring-node",
+      "type": "MonitoringNode",
+      "data": {
+        "label": "monitoring",
+        "status": "active",
+        "cost": "~$20/mo",
+        "typeSubText": "azurerm_log_analytics_workspace"
+      },
+      "position": {
+        "x": 700,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    }
+  ],
+  "services": [
+    {
+      "name": "Secure Virtual Network (VPC/VNet)",
+      "category": "backend",
+      "description": "Visual node representing Secure Virtual Network (VPC/VNet)."
+    },
+    {
+      "name": "gateway",
+      "category": "gateway",
+      "description": "Visual node representing gateway."
+    },
+    {
+      "name": "frontend",
+      "category": "frontend",
+      "description": "Visual node representing frontend."
+    },
+    {
+      "name": "compute_k8s",
+      "category": "backend",
+      "description": "Visual node representing compute_k8s."
+    },
+    {
+      "name": "queue",
+      "category": "backend",
+      "description": "Visual node representing queue."
+    },
+    {
+      "name": "cache",
+      "category": "cache",
+      "description": "Visual node representing cache."
+    },
+    {
+      "name": "database_relational",
+      "category": "database",
+      "description": "Visual node representing database_relational."
+    },
+    {
+      "name": "monitoring",
+      "category": "monitoring",
+      "description": "Visual node representing monitoring."
+    }
+  ]
+}
+RESP LEN: 4053
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 4234
+RAW RESPONSE:
+{
+  "nodes": [
+    {
+      "id": "queue-node",
+      "type": "BackendNode",
+      "data": {
+        "label": "queue",
+        "status": "active",
+        "cost": "~$75/mo",
+        "typeSubText": "azurerm_container_app"
+      },
+      "position": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "dragging": true,
+      "width": 224,
+      "height": 63
+    }
+  ],
+  "services": [
+    {
+      "name": "queue",
+      "category": "backend",
+      "description": "Visual node representing queue."
+    }
+  ]
+}
+RESP LEN: 631
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 4234
+RAW RESPONSE:
+{
+  "nodes": [
+    {
+      "id": "vpc-group",
+      "type": "NetworkGroupNode",
+      "position": {
+        "x": -60,
+        "y": 160
+      },
+      "data": {
+        "label": "Secure Virtual Network (VPC/VNet)",
+        "width": 1120,
+        "height": 610,
+        "cost": "~$25/mo",
+        "typeSubText": "azurerm_resource"
+      },
+      "zIndex": -1,
+      "draggable": false,
+      "selectable": false,
+      "width": 1120,
+      "height": 610
+    },
+    {
+      "id": "gateway-node",
+      "type": "GatewayNode",
+      "data": {
+        "label": "gateway",
+        "status": "active",
+        "cost": "~$60/mo",
+        "typeSubText": "azurerm_application_gateway"
+      },
+      "position": {
+        "x": 360,
+        "y": 80
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "frontend-node",
+      "type": "FrontendNode",
+      "data": {
+        "label": "frontend",
+        "status": "active",
+        "cost": "~$30/mo",
+        "typeSubText": "azurerm_static_web_app"
+      },
+      "position": {
+        "x": 360,
+        "y": 260
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "backend-node",
+      "type": "BackendNode",
+      "data": {
+        "label": "compute_k8s",
+        "status": "active",
+        "cost": "~$75/mo",
+        "typeSubText": "azurerm_container_app"
+      },
+      "position": {
+        "x": 190,
+        "y": 440
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "queue-node",
+      "type": "BackendNode",
+      "data": {
+        "label": "queue",
+        "status": "active",
+        "cost": "~$75/mo",
+        "typeSubText": "azurerm_container_app"
+      },
+      "position": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "dragging": true,
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "cache-node",
+      "type": "CacheNode",
+      "data": {
+        "label": "cache",
+        "status": "active",
+        "cost": "~$45/mo",
+        "typeSubText": "azurerm_redis_cache"
+      },
+      "position": {
+        "x": 20,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "database-node",
+      "type": "DatabaseNode",
+      "data": {
+        "label": "database_relational",
+        "status": "active",
+        "cost": "~$115/mo",
+        "typeSubText": "azurerm_postgresql_flexible_server"
+      },
+      "position": {
+        "x": 360,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "monitoring-node",
+      "type": "MonitoringNode",
+      "data": {
+        "label": "monitoring",
+        "status": "active",
+        "cost": "~$20/mo",
+        "typeSubText": "azurerm_log_analytics_workspace"
+      },
+      "position": {
+        "x": 700,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    }
+  ],
+  "services": [
+    {
+      "name": "Secure Virtual Network (VPC/VNet)",
+      "category": "backend",
+      "description": "Visual node representing Secure Virtual Network (VPC/VNet)."
+    },
+    {
+      "name": "gateway",
+      "category": "gateway",
+      "description": "Visual node representing gateway."
+    },
+    {
+      "name": "frontend",
+      "category": "frontend",
+      "description": "Visual node representing frontend."
+    },
+    {
+      "name": "compute_k8s",
+      "category": "backend",
+      "description": "Visual node representing compute_k8s."
+    },
+    {
+      "name": "queue",
+      "category": "backend",
+      "description": "Visual node representing queue."
+    },
+    {
+      "name": "cache",
+      "category": "cache",
+      "description": "Visual node representing cache."
+    },
+    {
+      "name": "database_relational",
+      "category": "database",
+      "description": "Visual node representing database_relational."
+    },
+    {
+      "name": "monitoring",
+      "category": "monitoring",
+      "description": "Visual node representing monitoring."
+    }
+  ]
+}
+RESP LEN: 4053
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 4234
+RAW RESPONSE:
+{
+  "nodes": [
+    {
+      "id": "vpc-group",
+      "type": "NetworkGroupNode",
+      "position": {
+        "x": -60,
+        "y": 160
+      },
+      "data": {
+        "label": "Secure Virtual Network (VPC/VNet)",
+        "width": 1120,
+        "height": 610,
+        "cost": "~$25/mo",
+        "typeSubText": "azurerm_resource"
+      },
+      "zIndex": -1,
+      "draggable": false,
+      "selectable": false,
+      "width": 1120,
+      "height": 610
+    },
+    {
+      "id": "gateway-node",
+      "type": "GatewayNode",
+      "data": {
+        "label": "gateway",
+        "status": "active",
+        "cost": "~$60/mo",
+        "typeSubText": "azurerm_application_gateway"
+      },
+      "position": {
+        "x": 360,
+        "y": 80
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "frontend-node",
+      "type": "FrontendNode",
+      "data": {
+        "label": "frontend",
+        "status": "active",
+        "cost": "~$30/mo",
+        "typeSubText": "azurerm_static_web_app"
+      },
+      "position": {
+        "x": 360,
+        "y": 260
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "backend-node",
+      "type": "BackendNode",
+      "data": {
+        "label": "compute_k8s",
+        "status": "active",
+        "cost": "~$75/mo",
+        "typeSubText": "azurerm_container_app"
+      },
+      "position": {
+        "x": 190,
+        "y": 440
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "queue-node",
+      "type": "BackendNode",
+      "data": {
+        "label": "queue",
+        "status": "active",
+        "cost": "~$75/mo",
+        "typeSubText": "azurerm_container_app"
+      },
+      "position": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": 523.1294385628078,
+        "y": 440
+      },
+      "dragging": true,
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "cache-node",
+      "type": "CacheNode",
+      "data": {
+        "label": "cache",
+        "status": "active",
+        "cost": "~$45/mo",
+        "typeSubText": "azurerm_redis_cache"
+      },
+      "position": {
+        "x": 20,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "database-node",
+      "type": "DatabaseNode",
+      "data": {
+        "label": "database_relational",
+        "status": "active",
+        "cost": "~$115/mo",
+        "typeSubText": "azurerm_postgresql_flexible_server"
+      },
+      "position": {
+        "x": 360,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    },
+    {
+      "id": "monitoring-node",
+      "type": "MonitoringNode",
+      "data": {
+        "label": "monitoring",
+        "status": "active",
+        "cost": "~$20/mo",
+        "typeSubText": "azurerm_log_analytics_workspace"
+      },
+      "position": {
+        "x": 700,
+        "y": 620
+      },
+      "width": 224,
+      "height": 63
+    }
+  ],
+  "services": [
+    {
+      "name": "Secure Virtual Network (VPC/VNet)",
+      "category": "backend",
+      "description": "Visual node representing Secure Virtual Network (VPC/VNet)."
+    },
+    {
+      "name": "gateway",
+      "category": "gateway",
+      "description": "Visual node representing gateway."
+    },
+    {
+      "name": "frontend",
+      "category": "frontend",
+      "description": "Visual node representing frontend."
+    },
+    {
+      "name": "compute_k8s",
+      "category": "backend",
+      "description": "Visual node representing compute_k8s."
+    },
+    {
+      "name": "queue",
+      "category": "backend",
+      "description": "Visual node representing queue."
+    },
+    {
+      "name": "cache",
+      "category": "cache",
+      "description": "Visual node representing cache."
+    },
+    {
+      "name": "database_relational",
+      "category": "database",
+      "description": "Visual node representing database_relational."
+    },
+    {
+      "name": "monitoring",
+      "category": "monitoring",
+      "description": "Visual node representing monitoring."
+    }
+  ]
+}
+RESP LEN: 4053
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 216
+RAW RESPONSE:
+{"architecture": {"nodes": [], "services": []}}
+RESP LEN: 47
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 3403
+RAW RESPONSE:
+{
+  "nodes": [
+    {
+      "id": "customer-portal",
+      "type": "CustomerPortalNode",
+      "data": {
+        "label": "customer portal",
+        "status": "active",
+        "cost": null,
+        "typeSubText": "Self-service Support, User Profile Management"
+      },
+      "position": {
+        "x": 300.0,
+        "y": 420.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-gateway-customer-portal",
+      "source": "gateway-node",
+      "target": "customer-portal",
+      "animated": true
+    }
+  ],
+  "services": [
+    {
+      "name": "gateway",
+      "category": "gateway",
+      "description": "Public entry point, SSL termination, and threat prevention filtering traffic into the infrastructure."
+    },
+    {
+      "name": "customer-portal",
+      "category": "customer_portal",
+      "description": "Self-service support for users, user profile management, and lightweight CRUD workflows."
+    }
+  ],
+  "cloud_provider": "azure"
+}
+RESP LEN: 945
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 216
+RAW RESPONSE:
+{"architecture": {"nodes": [], "services": []}}
+RESP LEN: 47
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 21780
+## RAW OLLAMA RESPONSE:
+{
+  "architecture": {
+    "source": "https://raw.githubusercontent.com/AvnerSharon/video-streaming-platform-architecture/main/architecture.json",
+    "services": []
+  },
+  "cloud_provider": "azure",
+  "system_requirements": [
+    {
+      "service_name": "User Authentication Service",
+      "description": "Handles user login, registration, and session management."
+    },
+    {
+      "service_name": "Subscription Management Service",
+      "description": "Manages user subscriptions, billing, and payment processing."
+    },
+    {
+      "service_name": "Personalized Recommendations Service",
+      "description": "Provides personalized video content recommendations based on user preferences and viewing history."
+    },
+    {
+      "service_name": "Content Search Service",
+      "description": "Facilitates searching for videos by title, genre, actor, etc., with support for fuzzy search."
+    },
+    {
+      "service_name": "Watchlist Management Service",
+      "description": "Manages user watchlists and allows users to add or remove videos from their watchlist."
+    },
+    {
+      "service_name": "Adaptive Video Streaming Service",
+      "description": "Handles adaptive bitrate streaming for different network conditions, ensuring smooth playback without buffering."
+    }
+  ],
+  "system_architecture": {
+    "source": "https://raw.githubusercontent.com/AvnerSharon/video-streaming-platform-architecture/main/architecture.json",
+    "services": []
+  },
+  "user_requirements": [
+    {
+      "requirement": "High-scale video streaming platform similar to Netflix, Disney+, or Amazon Prime Video."
+    },
+    {
+      "requirement": "Support for user authentication and subscription management."
+    },
+    {
+      "requirement": "Personalized recommendations based on user preferences and viewing history."
+    },
+    {
+      "requirement": "Content search functionality with support for fuzzy search."
+    },
+    {
+      "requirement": "Watchlist management feature allowing users to add or remove videos from their watchlist."
+    },
+    {
+      "requirement": "Adaptive video streaming capability across web, mobile, and smart TV devices."
+    }
+  ]
+}
+RESP LEN: 2163
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 21787
+## RAW OLLAMA RESPONSE:
+{
+  "architecture": {
+    "source": "provided_architecture.json",
+    "target": "output_architecture.json"
+  },
+  "services": [],
+  "cloud_provider": "azure",
+  "system_requirements": {
+    "user_authentication": true,
+    "subscription_management": true,
+    "personalized_recommendations": true,
+    "content_search": true,
+    "watchlists": true,
+    "adaptive_video_streaming": true,
+    "concurrent_viewers_support": true,
+    "low_latency_content_delivery": true,
+    "high_availability": true
+  }
+}
+RESP LEN: 505
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 4840
+## RAW OLLAMA RESPONSE:
+{
+"cloud_provider": "",
+"vnet": {},
+"subnets": [],
+"components": [],
+"security": [],
+"monitoring": [],
+"databases": [],
+"storage": [],
+"traffic_flow": [],
+"terraform_modules": []
+}
+RESP LEN: 180
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 22232
+## RAW OLLAMA RESPONSE:
+{
+  "services": [
+    {
+      "name": "Custom Security Node",
+      "category": "security",
+      "description": "Visual node representing Custom Security."
+    }
+  ]
+}
+RESP LEN: 168
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 22232
+## RAW OLLAMA RESPONSE:
+{
+  "user_customized_budget": [
+    {
+      "service": "Azure Firewall",
+      "cost": "$10/mo"
+    },
+    {
+      "service": "NSG - Ingress",
+      "cost": "$5/mo"
+    },
+    {
+      "service": "NSG - App",
+      "cost": "$8/mo"
+    },
+    {
+      "service": "NSG - Data",
+      "cost": "$7/mo"
+    },
+    {
+      "service": "Azure Key Vault",
+      "cost": "$6/mo"
+    },
+    {
+      "service": "Private Endpoint - PostgreSQL",
+      "cost": "$4/mo"
+    },
+    {
+      "service": "Private Endpoint - Key Vault",
+      "cost": "$3/mo"
+    },
+    {
+      "service": "Private Endpoint - Storage",
+      "cost": "$2/mo"
+    },
+    {
+      "service": "Azure Bastion",
+      "cost": "$5/mo"
+    },
+    {
+      "service": "Azure Monitor",
+      "cost": "$3/mo"
+    },
+    {
+      "service": "Azure Log Analytics",
+      "cost": "$2/mo"
+    },
+    {
+      "service": "Application Insights",
+      "cost": "$1/mo"
+    }
+  ]
+}
+RESP LEN: 918
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 4840
+## RAW OLLAMA RESPONSE:
+{
+"cloud_provider": "",
+"vnet": {},
+"subnets": [],
+"components": [],
+"security": [],
+"monitoring": [],
+"databases": [],
+"storage": [],
+"traffic_flow": [],
+"terraform_modules": []
+}
+RESP LEN: 180
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 22208
+## RAW OLLAMA RESPONSE:
+{
+  "services": [
+    {
+      "name": "Custom Security Node",
+      "category": "security",
+      "description": "Visual node representing Custom Security."
+    }
+  ]
+}
+RESP LEN: 168
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 22166
+## RAW OLLAMA RESPONSE:
+{
+  "user_customized_budget": {
+    "total_budget": 1000,
+    "service_breakdown": [
+      {"name": "Azure Firewall", "cost": 50},
+      {"name": "Azure Key Vault", "cost": 30},
+      {"name": "NSG - Ingress", "cost": 20},
+      {"name": "NSG - App", "cost": 40},
+      {"name": "NSG - Data", "cost": 50},
+      {"name": "Azure Bastion", "cost": 30},
+      {"name": "Terraform State Storage", "cost": 25},
+      {"name": "Azure Monitor", "cost": 40},
+      {"name": "Azure Log Analytics", "cost": 30}
+    ]
+  }
+}
+RESP LEN: 512
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 22166
+## RAW OLLAMA RESPONSE:
+{
+  "services": [
+    {
+      "name": "Custom Security Node",
+      "category": "security",
+      "description": "Visual node representing Custom Security."
+    }
+  ]
+}
+RESP LEN: 168
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 22166
+## RAW OLLAMA RESPONSE:
+{
+  "services": [
+    {
+      "name": "Custom Security Node",
+      "category": "security",
+      "description": "Visual node representing Custom Security."
+    }
+  ]
+}
+RESP LEN: 168
+-----------------------
+
+--- MODEL: qwen2.5:3b ---
+PROMPT LEN: 22166
+## RAW OLLAMA RESPONSE:
+{
+  "user_customized_budget": {
+    "total_budget": 1000,
+    "service_breakdown": [
+      {"name": "Azure Firewall", "cost": 50},
+      {"name": "Azure Key Vault", "cost": 30},
+      {"name": "NSG - Ingress", "cost": 20},
+      {"name": "NSG - App", "cost": 40},
+      {"name": "NSG - Data", "cost": 50},
+      {"name": "Azure Bastion", "cost": 30},
+      {"name": "Terraform State Storage", "cost": 20},
+      {"name": "Azure Monitor", "cost": 40},
+      {"name": "Azure Log Analytics", "cost": 30}
+    ]
+  }
+}
+RESP LEN: 512
+-----------------------
+
