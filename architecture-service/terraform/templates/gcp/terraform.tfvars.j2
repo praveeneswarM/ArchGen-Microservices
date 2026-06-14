@@ -1,0 +1,2 @@
+gcp_project_id = "archgen-project-placeholder"
+gcp_region     = "us-central1"

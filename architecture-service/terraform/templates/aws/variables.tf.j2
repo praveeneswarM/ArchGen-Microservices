@@ -1,0 +1,11 @@
+variable "aws_region" {
+  type        = string
+  description = "AWS region to deploy resources"
+  default     = "us-east-1"
+}
+
+variable "db_password" {
+  type        = string
+  description = "Password for the RDS Database"
+  sensitive   = true
+}

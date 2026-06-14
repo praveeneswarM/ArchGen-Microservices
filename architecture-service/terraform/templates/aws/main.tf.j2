@@ -1,0 +1,143 @@
+provider "aws" {
+  region = var.aws_region
+}
+
+# Base Network
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  tags = {
+    Name = "archgen-vpc"
+  }
+}
+
+resource "aws_subnet" "public" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "archgen-public-subnet"
+  }
+}
+
+resource "aws_subnet" "private" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.2.0/24"
+  tags = {
+    Name = "archgen-private-subnet"
+  }
+}
+
+{% for node in nodes %}
+{% set safe_id = node.id | sanitize_id %}
+
+{% if node.type == 'GatewayNode' %}
+# Gateway & Load Balancer
+resource "aws_lb" "alb_{{ safe_id }}" {
+  name               = "alb-{{ safe_id }}"
+  internal           = false
+  load_balancer_type = "application"
+  subnets            = [aws_subnet.public.id]
+}
+resource "aws_wafv2_web_acl" "waf_{{ safe_id }}" {
+  name        = "waf-{{ safe_id }}"
+  scope       = "REGIONAL"
+  default_action {
+    allow {}
+  }
+  visibility_config {
+    cloudwatch_metrics_enabled = false
+    metric_name                = "waf-{{ safe_id }}"
+    sampled_requests_enabled   = false
+  }
+}
+
+{% elif node.type == 'FrontendNode' %}
+# S3 Static Hosting / CloudFront
+resource "aws_s3_bucket" "frontend_{{ safe_id }}" {
+  bucket = "archgen-frontend-{{ safe_id }}"
+}
+resource "aws_s3_bucket_public_access_block" "frontend_{{ safe_id }}_access" {
+  bucket = aws_s3_bucket.frontend_{{ safe_id }}.id
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+{% elif node.type == 'BackendNode' %}
+# ECS Fargate Compute
+resource "aws_ecs_cluster" "cluster_{{ safe_id }}" {
+  name = "cluster-{{ safe_id }}"
+}
+resource "aws_ecs_task_definition" "task_{{ safe_id }}" {
+  family                   = "task-{{ safe_id }}"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256
+  memory                   = 512
+  container_definitions    = jsonencode([
+    {
+      name      = "api-container"
+      image     = "nginx:latest"
+      essential = true
+      portMappings = [
+        {
+          containerPort = 80
+          hostPort      = 80
+        }
+      ]
+    }
+  ])
+}
+resource "aws_ecs_service" "service_{{ safe_id }}" {
+  name            = "service-{{ safe_id }}"
+  cluster         = aws_ecs_cluster.cluster_{{ safe_id }}.id
+  task_definition = aws_ecs_task_definition.task_{{ safe_id }}.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+  network_configuration {
+    subnets = [aws_subnet.private.id]
+  }
+}
+
+{% elif node.type == 'DatabaseNode' %}
+# RDS PostgreSQL
+resource "aws_db_instance" "db_{{ safe_id }}" {
+  allocated_storage    = 20
+  engine               = "postgres"
+  engine_version       = "15.4"
+  instance_class       = "db.t3.micro"
+  username             = "adminuser"
+  password             = var.db_password
+  skip_final_snapshot  = true
+  identifier           = "db-{{ safe_id }}"
+}
+
+{% elif node.type == 'CacheNode' %}
+# ElastiCache Redis
+resource "aws_elasticache_cluster" "redis_{{ safe_id }}" {
+  cluster_id           = "redis-{{ safe_id }}"
+  engine               = "redis"
+  node_type            = "cache.t3.micro"
+  num_cache_nodes      = 1
+  parameter_group_name = "default.redis7"
+  engine_version       = "7.0"
+  port                 = 6379
+}
+
+{% elif node.type == 'StorageNode' %}
+# S3 Storage
+resource "aws_s3_bucket" "storage_{{ safe_id }}" {
+  bucket = "archgen-storage-{{ safe_id }}"
+}
+
+{% elif node.type == 'SecurityNode' %}
+# Secrets Manager
+resource "aws_secretsmanager_secret" "vault_{{ safe_id }}" {
+  name = "vault-{{ safe_id }}"
+}
+
+{% endif %}
+{% endfor %}

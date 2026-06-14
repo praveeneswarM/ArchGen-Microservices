@@ -1,0 +1,123 @@
+provider "google" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+}
+
+# Base Network
+resource "google_compute_network" "vpc_network" {
+  name                    = "archgen-vpc"
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "subnet" {
+  name          = "archgen-subnet"
+  ip_cidr_range = "10.0.1.0/24"
+  region        = var.gcp_region
+  network       = google_compute_network.vpc_network.id
+}
+
+{% for node in nodes %}
+{% set safe_id = node.id | sanitize_id %}
+
+{% if node.type == 'GatewayNode' %}
+# Load Balancing & Cloud Armor
+resource "google_compute_global_forwarding_rule" "default_{{ safe_id }}" {
+  name       = "fwd-rule-{{ safe_id }}"
+  target     = google_compute_target_http_proxy.default_{{ safe_id }}.id
+  port_range = "80"
+}
+resource "google_compute_target_http_proxy" "default_{{ safe_id }}" {
+  name    = "http-proxy-{{ safe_id }}"
+  url_map = google_compute_url_map.default_{{ safe_id }}.id
+}
+resource "google_compute_url_map" "default_{{ safe_id }}" {
+  name            = "url-map-{{ safe_id }}"
+  default_service = google_compute_backend_service.default_{{ safe_id }}.id
+}
+resource "google_compute_backend_service" "default_{{ safe_id }}" {
+  name                  = "backend-service-{{ safe_id }}"
+  protocol              = "HTTP"
+  load_balancing_scheme = "EXTERNAL"
+}
+
+{% elif node.type == 'FrontendNode' %}
+# Cloud Storage for Static Hosting
+resource "google_storage_bucket" "frontend_{{ safe_id }}" {
+  name          = "archgen-frontend-{{ safe_id }}"
+  location      = "US"
+  force_destroy = true
+  website {
+    main_page_suffix = "index.html"
+    not_found_page   = "404.html"
+  }
+}
+resource "google_storage_bucket_iam_binding" "public_read_{{ safe_id }}" {
+  bucket = google_storage_bucket.frontend_{{ safe_id }}.name
+  role   = "roles/storage.objectViewer"
+  members = [
+    "allUsers",
+  ]
+}
+
+{% elif node.type == 'BackendNode' %}
+# Cloud Run Compute
+resource "google_cloud_run_service" "default_{{ safe_id }}" {
+  name     = "cloudrun-{{ safe_id }}"
+  location = var.gcp_region
+
+  template {
+    spec {
+      containers {
+        image = "gcr.io/cloudrun/hello"
+      }
+    }
+  }
+
+  traffic {
+    percent         = 100
+    latest_revision = true
+  }
+}
+
+{% elif node.type == 'DatabaseNode' %}
+# Cloud SQL PostgreSQL
+resource "google_sql_database_instance" "default_{{ safe_id }}" {
+  name             = "cloudsql-{{ safe_id }}"
+  database_version = "POSTGRES_14"
+  region           = var.gcp_region
+
+  settings {
+    tier = "db-f1-micro"
+  }
+  deletion_protection = false
+}
+
+{% elif node.type == 'CacheNode' %}
+# Memorystore Redis
+resource "google_redis_instance" "default_{{ safe_id }}" {
+  name           = "redis-{{ safe_id }}"
+  memory_size_gb = 1
+  region         = var.gcp_region
+  redis_version  = "REDIS_6_X"
+}
+
+{% elif node.type == 'StorageNode' %}
+# Cloud Storage
+resource "google_storage_bucket" "storage_{{ safe_id }}" {
+  name          = "archgen-storage-{{ safe_id }}"
+  location      = "US"
+  force_destroy = true
+}
+
+{% elif node.type == 'SecurityNode' %}
+# Secret Manager
+resource "google_secret_manager_secret" "vault_{{ safe_id }}" {
+  secret_id = "vault-{{ safe_id }}"
+
+  replication {
+    automatic = true
+  }
+}
+
+{% endif %}
+{% endfor %}

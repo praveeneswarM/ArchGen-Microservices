@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #ffffff;
+  color: #0f172a;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow-x: hidden;
+}
+
+/* Futuristic Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #ffffff;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(17, 24, 39, 0.25);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(17, 24, 39, 0.5);
+}
+
+/* Glassmorphism panel base utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(228, 228, 231, 1);
+}
+
+/* React Flow customizations */
+.react-flow__background {
+  background-color: #ffffff !important;
+}
+
+.react-flow__minimap {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(228, 228, 231, 1) !important;
+  border-radius: 8px !important;
+}
+
+.react-flow__controls {
+  box-shadow: none !important;
+}
+
+.react-flow__controls-button {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(228, 228, 231, 1) !important;
+  color: #0f172a !important;
+  fill: #0f172a !important;
+  border-bottom: none !important;
+}
+
+.react-flow__controls-button:hover {
+  background-color: rgba(244, 244, 245, 1) !important;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.react-flow__edge-path {
+  stroke: rgba(17, 24, 39, 0.18) !important;
+  stroke-width: 2 !important;
+}
+
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: #0f172a !important;
+  stroke-dasharray: 5;
+  animation: dash 1s linear infinite;
+}
+
+@keyframes dash {
+  from {
+    stroke-dashoffset: 10;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}

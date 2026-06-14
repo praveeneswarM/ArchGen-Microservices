@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: archgen_db
+    volumes:
+      - mongo-data:/data/db
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./api-gateway/.env
+    depends_on:
+      - auth-service
+      - project-service
+      - architecture-service
+
+  auth-service:
+    build:
+      context: ./auth-service
+    container_name: auth-service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./auth-service/.env
+    depends_on:
+      - mongo
+
+  project-service:
+    build:
+      context: ./project-service
+    container_name: project-service
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./project-service/.env
+    depends_on:
+      - mongo
+
+  architecture-service:
+    build:
+      context: ./architecture-service
+    container_name: architecture-service
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    env_file:
+      - ./architecture-service/.env
+    depends_on:
+      - mongo
+
+  archgen-frontend:
+    build:
+      context: ./archgen-frontend
+    container_name: archgen-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./archgen-frontend/.env
+    depends_on:
+      - api-gateway
+
+volumes:
+  mongo-data:
+    name: mongo-data
