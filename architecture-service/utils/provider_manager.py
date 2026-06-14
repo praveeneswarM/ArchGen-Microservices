@@ -34,8 +34,9 @@ class ProviderManager:
 
     def _init_clients(self):
         openai_key = os.getenv('OPENAI_API_KEY', '')
+        openai_base_url = os.getenv('OPENAI_BASE_URL') # Optional
         if openai_key and len(openai_key) > 5 and not openai_key.startswith('your_'):
-            self.openai_client = AsyncOpenAI(api_key=openai_key)
+            self.openai_client = AsyncOpenAI(api_key=openai_key, base_url=openai_base_url)
         else:
             self.openai_client = None
 
@@ -80,12 +81,12 @@ class ProviderManager:
 
         self._init_clients()
         
-        # 1. OpenAI
+        # 1. OpenAI (or AI Foundry compatible endpoints)
         if self.openai_client:
             try:
-                await self.openai_client.models.list(timeout=5)
+                # Some foundries don't support models.list(), so we just assume it's available if the client initialized
                 self.active_provider = 'OpenAI'
-                self.active_model = 'gpt-4o-mini'
+                self.active_model = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
                 self.last_check_time = now
                 return self.active_provider
             except Exception as e:
