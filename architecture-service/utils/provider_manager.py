@@ -5,7 +5,7 @@ import logging
 import aiohttp
 import re
 from typing import Dict, Any, Optional
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AsyncAzureOpenAI
 from utils.openai_client import OpenAIClient  # For mock fallback
 from utils.safe_json_parser import SafeJsonParser
 
@@ -36,7 +36,14 @@ class ProviderManager:
         openai_key = os.getenv('OPENAI_API_KEY', '')
         openai_base_url = os.getenv('OPENAI_BASE_URL') # Optional
         if openai_key and len(openai_key) > 5 and not openai_key.startswith('your_'):
-            self.openai_client = AsyncOpenAI(api_key=openai_key, base_url=openai_base_url)
+            if openai_base_url and 'openai.azure.com' in openai_base_url:
+                self.openai_client = AsyncAzureOpenAI(
+                    azure_endpoint=openai_base_url.split('/openai')[0],
+                    api_key=openai_key,
+                    api_version='2024-02-01'
+                )
+            else:
+                self.openai_client = AsyncOpenAI(api_key=openai_key, base_url=openai_base_url)
         else:
             self.openai_client = None
 
