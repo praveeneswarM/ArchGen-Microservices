@@ -17,6 +17,10 @@ Expected JSON Schema:
       "id": "string (unique identifier)",
       "type": "string (e.g., 'LoadBalancer', 'Database', 'Compute', 'Module')",
       "label": "string",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
       "data": {
         "subnet": "string (optional)",
         "details": "string (optional)"

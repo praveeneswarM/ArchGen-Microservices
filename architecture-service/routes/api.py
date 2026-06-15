@@ -88,6 +88,11 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         if not nodes:
             raise Exception("AI generated empty node list")
             
+        # Ensure position exists to prevent frontend crash
+        for idx, node in enumerate(nodes):
+            if 'position' not in node or not isinstance(node['position'], dict):
+                node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+            
     except Exception as e:
         logger.warning(f"AI Generation Failed: {e}. Falling back to deterministic engine.")
         reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider)
