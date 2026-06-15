@@ -15,12 +15,8 @@ Expected JSON Schema:
   "nodes": [
     {
       "id": "string (unique identifier)",
-      "type": "string (e.g., 'LoadBalancer', 'Database', 'Compute', 'Module')",
+      "type": "string (MUST be one of: 'GatewayNode', 'FrontendNode', 'BackendNode', 'DatabaseNode', 'CacheNode', 'StorageNode', 'MonitoringNode', 'SecurityNode')",
       "label": "string",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
       "data": {
         "subnet": "string (optional)",
         "details": "string (optional)"
