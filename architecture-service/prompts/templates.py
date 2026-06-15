@@ -15,6 +15,11 @@ CRITICAL INSTRUCTIONS:
 4. If security requirements are strict, include security components like WAFs, Firewalls, Key Vaults, and Private Endpoints.
 5. If performance requirements are high, include CDNs, Load Balancers, and Caching layers (Redis/Memcached).
 6. Ensure all components are properly connected with logical network flows via "edges".
+7. CRITICAL TERRAFORM CONVENTIONS: The infrastructure compiler requires specific Node IDs to bind variables correctly:
+   - Database nodes MUST have an id starting with "database" (e.g., "database-postgres").
+   - Cache nodes MUST have an id starting with "cache" (e.g., "cache-redis").
+   - Key Vault nodes MUST have an id starting with "vault" (e.g., "vault-keys").
+   - Do not use generic IDs or the Terraform code will be missing environment variables and fail to deploy.
 
 You must output ONLY valid JSON.
 The JSON must contain exactly three keys: "nodes", "edges", and "services".
