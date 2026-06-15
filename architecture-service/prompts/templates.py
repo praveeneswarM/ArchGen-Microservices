@@ -6,7 +6,16 @@ COST_OPTIMIZATION_PROMPT = "Optimize cost"
 COMPLEXITY_AUDITOR_PROMPT = "Audit complexity"
 ARCHITECTURE_REASONING_PROMPT = "Reason architecture"
 ARCHITECTURE_PLANNING_PROMPT = """You are an expert Cloud Architect.
-Your task is to take the analyzed requirements and generate a visual topology graph.
+Your task is to take the analyzed requirements and generate a highly detailed, production-ready visual topology graph.
+
+CRITICAL INSTRUCTIONS:
+1. Analyze the application type, security constraints, and performance requirements provided in the input.
+2. Design a proper Virtual Network (VNet/VPC) architecture.
+3. Assign each node to an appropriate subnet using the `data.subnet` property (e.g., "public-ingress-subnet", "private-app-subnet", "secure-data-subnet", "management-subnet").
+4. If security requirements are strict, include security components like WAFs, Firewalls, Key Vaults, and Private Endpoints.
+5. If performance requirements are high, include CDNs, Load Balancers, and Caching layers (Redis/Memcached).
+6. Ensure all components are properly connected with logical network flows via "edges".
+
 You must output ONLY valid JSON.
 The JSON must contain exactly three keys: "nodes", "edges", and "services".
 
