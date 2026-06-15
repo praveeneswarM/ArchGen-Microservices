@@ -174,10 +174,12 @@ class ProviderManager:
         return OpenAIClient._generate_mock_response(system_prompt, user_prompt)
 
     async def _call_openai(self, client, model, system, user, timeout):
+        # OpenAI requires the word 'json' to be in the prompt when using response_format={'type': 'json_object'}
+        system_with_json = system + "\n\nEnsure your response is a valid JSON object."
         response = await client.chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': system},
+                {'role': 'system', 'content': system_with_json},
                 {'role': 'user', 'content': user}
             ],
             response_format={'type': 'json_object'},
