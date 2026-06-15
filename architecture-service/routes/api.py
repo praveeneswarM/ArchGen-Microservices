@@ -104,6 +104,8 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         edges = topology['edges']
         services = topology['services']
         
+        llm_client.active_provider = 'deterministic'
+        
     budget_val = 500.0
     try:
         budget_str = re.sub(r'[^\d.]', '', requirements.monthly_budget)
@@ -151,7 +153,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         logger.error("Quality Gate Failed: Architecture contains no nodes.")
         raise HTTPException(status_code=500, detail="Quality Gate Failed: Could not generate valid topology.")
         
-    generation_source = f"deterministic+{getattr(llm_client, 'active_provider', 'ollama').lower()}"
+    generation_source = f"ai_generated+{getattr(llm_client, 'active_provider', 'ollama').lower()}"
 
     resp_dict = {
         'nodes': nodes,

@@ -17,6 +17,7 @@ class RequirementAnalysisAgent(BaseAgent):
         Analyzes raw user requirements.
         """
         user_prompt = (
+            f"Application Description: {requirements.app_description}\n"
             f"Application Type: {requirements.application_type}\n"
             f"Expected Users: {requirements.expected_users}\n"
             f"Cloud Provider: {requirements.cloud_provider}\n"
