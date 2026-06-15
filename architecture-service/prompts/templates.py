@@ -5,7 +5,42 @@ REQUIREMENT_ANALYSIS_PROMPT = "Analyze requirements"
 COST_OPTIMIZATION_PROMPT = "Optimize cost"
 COMPLEXITY_AUDITOR_PROMPT = "Audit complexity"
 ARCHITECTURE_REASONING_PROMPT = "Reason architecture"
-ARCHITECTURE_PLANNING_PROMPT = "Plan architecture"
+ARCHITECTURE_PLANNING_PROMPT = """You are an expert Cloud Architect.
+Your task is to take the analyzed requirements and generate a visual topology graph.
+You must output ONLY valid JSON.
+The JSON must contain exactly three keys: "nodes", "edges", and "services".
+
+Expected JSON Schema:
+{
+  "nodes": [
+    {
+      "id": "string (unique identifier)",
+      "type": "string (e.g., 'LoadBalancer', 'Database', 'Compute', 'Module')",
+      "label": "string",
+      "data": {
+        "subnet": "string (optional)",
+        "details": "string (optional)"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "string",
+      "source": "string (node id)",
+      "target": "string (node id)",
+      "label": "string (optional)"
+    }
+  ],
+  "services": [
+    {
+      "name": "string",
+      "type": "string",
+      "description": "string"
+    }
+  ]
+}
+
+Ensure your response is a valid JSON object matching this schema. Do not include markdown blocks."""
 ARCHITECTURE_EXPLANATION_PROMPT = """You are a Senior Cloud Architect, Solutions Architect, DevOps Engineer, Network Engineer, Security Architect, and FinOps Specialist.
 
 Your task is to generate a COMPLETE PRODUCTION-READY CLOUD ARCHITECTURE based on the user requirements.

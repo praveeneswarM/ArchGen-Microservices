@@ -127,8 +127,8 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                 explanation_agent.explain(eval_plan, requirements.model_dump())
             )
 
-        # 30 seconds max enrichment time
-        secured_res, complexity_res, cost_res, explanation_res = await asyncio.wait_for(run_enrichments(), timeout=30.0)
+        # 120 seconds max enrichment time to account for rate limit retries
+        secured_res, complexity_res, cost_res, explanation_res = await asyncio.wait_for(run_enrichments(), timeout=120.0)
     except Exception as e:
         logger.warning(f'Enrichment failed or timed out: {e}')
 
