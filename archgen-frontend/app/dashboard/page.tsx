@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toPng } from "html-to-image";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import {
   ArrowRight,
   CheckCircle2,
@@ -502,19 +504,27 @@ export default function DashboardPage() {
     pushActivity("Exported architecture JSON");
   };
 
-  const exportTerraform = () => {
+  const exportTerraform = async () => {
     if (!terraform) return;
-    downloadTextFile(
-      `${projectName.replace(/\s+/g, "_").toLowerCase()}-terraform.tf`,
-      [
-        terraform.main_tf,
-        terraform.variables_tf,
-        terraform.outputs_tf,
-        terraform.terraform_tfvars,
-      ].join("\n\n"),
-      "text/plain"
-    );
-    pushActivity("Exported Terraform");
+    try {
+      const zip = new JSZip();
+      
+      zip.file("main.tf", terraform.main_tf || "");
+      zip.file("variables.tf", terraform.variables_tf || "");
+      zip.file("outputs.tf", terraform.outputs_tf || "");
+      zip.file("terraform.tfvars", terraform.terraform_tfvars || "");
+      
+      if (terraform.instructions) {
+        zip.file("README.md", terraform.instructions);
+      }
+      
+      const blob = await zip.generateAsync({ type: "blob" });
+      saveAs(blob, `${projectName.replace(/\s+/g, "_").toLowerCase()}-terraform.zip`);
+      
+      pushActivity("Exported Terraform as ZIP");
+    } catch (err) {
+      console.error("Failed to export Terraform", err);
+    }
   };
 
   const exportPng = async () => {
