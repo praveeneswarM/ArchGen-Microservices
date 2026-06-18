@@ -12,22 +12,82 @@ resource "aws_vpc" "main" {
   }
 }
 
-resource "aws_subnet" "public" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.1.0/24"
-  map_public_ip_on_launch = true
+# Subnets mapped from the visual architecture canvas
+{% for node in nodes %}
+{% if node.type == 'SubnetGroupNode' %}
+{% set safe_id = node.id | sanitize_id %}
+resource "aws_subnet" "{{ safe_id }}" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = {% if '10.0.1.' in node.data.label or 'ingress' in node.id %} "10.0.1.0/24"
+                      {% elif '10.0.2.' in node.data.label or 'app' in node.id %} "10.0.2.0/24"
+                      {% elif '10.0.3.' in node.data.label or 'data' in node.id %} "10.0.3.0/24"
+                      {% elif '10.0.4.' in node.data.label or 'mgmt' in node.id %} "10.0.4.0/24"
+                      {% elif '10.0.5.' in node.data.label or 'pe' in node.id %} "10.0.5.0/24"
+                      {% else %} "10.0.10.0/24"
+                      {% endif %}
+  map_public_ip_on_launch = {% if 'ingress' in node.id %} true {% else %} false {% endif %}
   tags = {
-    Name = "archgen-public-subnet"
+    Name = "snet-{{ safe_id }}"
+  }
+}
+{% endif %}
+{% endfor %}
+
+# Security Group for Ingress
+resource "aws_security_group" "ingress_sg" {
+  name        = "ingress-sg"
+  description = "Allow HTTP/HTTPS inbound traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
-resource "aws_subnet" "private" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.2.0/24"
-  tags = {
-    Name = "archgen-private-subnet"
+# Security Group for App Workloads
+resource "aws_security_group" "app_sg" {
+  name        = "app-sg"
+  description = "Allow traffic from ingress"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ingress_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+{% if has_backend %}
+# Shared ECS Cluster for all backend services
+resource "aws_ecs_cluster" "cluster_main" {
+  name = "archgen-cluster"
+}
+{% endif %}
 
 {% for node in nodes %}
 {% set safe_id = node.id | sanitize_id %}
@@ -38,8 +98,10 @@ resource "aws_lb" "alb_{{ safe_id }}" {
   name               = "alb-{{ safe_id }}"
   internal           = false
   load_balancer_type = "application"
-  subnets            = [aws_subnet.public.id]
+  security_groups    = [aws_security_group.ingress_sg.id]
+  subnets            = [aws_subnet.subnetingress.id]
 }
+
 resource "aws_wafv2_web_acl" "waf_{{ safe_id }}" {
   name        = "waf-{{ safe_id }}"
   scope       = "REGIONAL"
@@ -58,6 +120,7 @@ resource "aws_wafv2_web_acl" "waf_{{ safe_id }}" {
 resource "aws_s3_bucket" "frontend_{{ safe_id }}" {
   bucket = "archgen-frontend-{{ safe_id }}"
 }
+
 resource "aws_s3_bucket_public_access_block" "frontend_{{ safe_id }}_access" {
   bucket = aws_s3_bucket.frontend_{{ safe_id }}.id
   block_public_acls       = false
@@ -67,10 +130,71 @@ resource "aws_s3_bucket_public_access_block" "frontend_{{ safe_id }}_access" {
 }
 
 {% elif node.type == 'BackendNode' %}
-# ECS Fargate Compute
-resource "aws_ecs_cluster" "cluster_{{ safe_id }}" {
-  name = "cluster-{{ safe_id }}"
+{% if node.id == 'aks-cluster' or 'eks' in node.id or 'k8s' in node.id %}
+# EKS Managed Kubernetes Cluster
+resource "aws_eks_cluster" "eks_{{ safe_id }}" {
+  name     = "eks-{{ safe_id }}"
+  role_arn = aws_iam_role.eks_role.arn
+
+  vpc_config {
+    subnet_ids = [aws_subnet.subnetapp.id]
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.eks_cluster_policy,
+  ]
 }
+
+resource "aws_iam_role" "eks_role" {
+  name = "eks-cluster-role-{{ safe_id }}"
+
+  assume_role_policy = jsonencode({
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "eks.amazonaws.com"
+      }
+    }]
+    Version = "2012-10-17"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.eks_role.name
+}
+{% elif node.id == 'aks-system' or node.id == 'aks-user' %}
+# Node Groups are defined as EKS Managed Node Groups
+resource "aws_eks_node_group" "nodes_{{ safe_id }}" {
+  cluster_name    = aws_eks_cluster.eks_akscluster.name
+  node_group_name = "ng-{{ safe_id }}"
+  node_role_arn   = aws_iam_role.node_role.arn
+  subnet_ids      = [aws_subnet.subnetapp.id]
+
+  scaling_config {
+    desired_size = 2
+    max_size     = 4
+    min_size     = 1
+  }
+}
+
+resource "aws_iam_role" "node_role" {
+  name = "eks-node-role-{{ safe_id }}"
+
+  assume_role_policy = jsonencode({
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+    }]
+    Version = "2012-10-17"
+  })
+}
+{% else %}
+# ECS Fargate Compute
 resource "aws_ecs_task_definition" "task_{{ safe_id }}" {
   family                   = "task-{{ safe_id }}"
   network_mode             = "awsvpc"
@@ -91,18 +215,28 @@ resource "aws_ecs_task_definition" "task_{{ safe_id }}" {
     }
   ])
 }
+
 resource "aws_ecs_service" "service_{{ safe_id }}" {
   name            = "service-{{ safe_id }}"
-  cluster         = aws_ecs_cluster.cluster_{{ safe_id }}.id
+  cluster         = aws_ecs_cluster.cluster_main.id
   task_definition = aws_ecs_task_definition.task_{{ safe_id }}.arn
   desired_count   = 1
   launch_type     = "FARGATE"
   network_configuration {
-    subnets = [aws_subnet.private.id]
+    subnets          = [aws_subnet.subnetapp.id]
+    security_groups  = [aws_security_group.app_sg.id]
+    assign_public_ip = false
   }
 }
+{% endif %}
 
 {% elif node.type == 'DatabaseNode' %}
+# RDS DB Subnet Group
+resource "aws_db_subnet_group" "db_subnet_group" {
+  name       = "db-subnet-group"
+  subnet_ids = [aws_subnet.subnetdata.id]
+}
+
 # RDS PostgreSQL
 resource "aws_db_instance" "db_{{ safe_id }}" {
   allocated_storage    = 20
@@ -111,11 +245,18 @@ resource "aws_db_instance" "db_{{ safe_id }}" {
   instance_class       = "db.t3.micro"
   username             = "adminuser"
   password             = var.db_password
+  db_subnet_group_name = aws_db_subnet_group.db_subnet_group.name
   skip_final_snapshot  = true
   identifier           = "db-{{ safe_id }}"
 }
 
 {% elif node.type == 'CacheNode' %}
+# ElastiCache DB Subnet Group
+resource "aws_elasticache_subnet_group" "cache_subnets" {
+  name       = "cache-subnet-group"
+  subnet_ids = [aws_subnet.subnetdata.id]
+}
+
 # ElastiCache Redis
 resource "aws_elasticache_cluster" "redis_{{ safe_id }}" {
   cluster_id           = "redis-{{ safe_id }}"
@@ -125,6 +266,7 @@ resource "aws_elasticache_cluster" "redis_{{ safe_id }}" {
   parameter_group_name = "default.redis7"
   engine_version       = "7.0"
   port                 = 6379
+  subnet_group_name    = aws_elasticache_subnet_group.cache_subnets.name
 }
 
 {% elif node.type == 'StorageNode' %}
@@ -134,10 +276,24 @@ resource "aws_s3_bucket" "storage_{{ safe_id }}" {
 }
 
 {% elif node.type == 'SecurityNode' %}
+{% if node.id.startswith('pe-') %}
+# VPC Endpoint (Private Link) for AWS services
+resource "aws_vpc_endpoint" "pe_{{ safe_id }}" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = {% if 'db' in node.id %} "com.amazonaws.us-east-1.rds"
+                      {% elif 'kv' in node.id %} "com.amazonaws.us-east-1.secretsmanager"
+                      {% elif 'storage' in node.id %} "com.amazonaws.us-east-1.s3"
+                      {% else %} "com.amazonaws.us-east-1.secretsmanager"
+                      {% endif %}
+  vpc_endpoint_type = "Interface"
+  subnet_ids        = [aws_subnet.subnetpe.id]
+}
+{% else %}
 # Secrets Manager
 resource "aws_secretsmanager_secret" "vault_{{ safe_id }}" {
   name = "vault-{{ safe_id }}"
 }
+{% endif %}
 
 {% endif %}
 {% endfor %}

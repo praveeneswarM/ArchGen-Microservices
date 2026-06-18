@@ -394,6 +394,17 @@ export default function DashboardPage() {
     }
   };
 
+  const handleApprove = useCallback(async () => {
+    pushActivity("Approving architecture design...");
+    try {
+      await approveArchitecture();
+      pushActivity("Validation complete. Terraform HCL compiled successfully.");
+      setActiveTab("terraform");
+    } catch (err: any) {
+      pushActivity(`Approval failed: ${err.message}`);
+    }
+  }, [approveArchitecture, pushActivity]);
+
   const handleLogout = () => {
     localStorage.removeItem("archgen_auth_token");
     localStorage.removeItem("archgen_refresh_token");
@@ -649,7 +660,7 @@ export default function DashboardPage() {
             initialEdges={architecture?.edges || []}
             onTopologyChange={updateLocalTopology}
             isApproved={isApproved}
-            onApprove={approveArchitecture}
+            onApprove={handleApprove}
             onRegenerate={regenerateArchitecture}
             undo={undo}
             redo={redo}
@@ -953,12 +964,12 @@ export default function DashboardPage() {
               {[
                 { tab: "dashboard", label: "Dashboard", icon: <LayoutGrid className="w-4 h-4" /> },
                 { tab: "generator", label: "Requirements Wizard", icon: <Sparkles className="w-4 h-4 text-cyan-400" /> },
-                { tab: "studio", label: "Architecture Studio", icon: <SquareStack className="w-4 h-4" /> },
-                { tab: "projects", label: "Saved Projects", icon: <FolderOpen className="w-4 h-4" /> },
                 { tab: "templates", label: "Blueprint Templates", icon: <Package className="w-4 h-4" /> },
+                { tab: "studio", label: "Architecture Studio", icon: <SquareStack className="w-4 h-4" /> },
                 { tab: "terraform", label: "Terraform Code", icon: <FileCode className="w-4 h-4" /> },
                 { tab: "validation", label: "Validation Center", icon: <Shield className="w-4 h-4" /> },
                 { tab: "cost", label: "Cost Analysis", icon: <DollarSign className="w-4 h-4" /> },
+                { tab: "projects", label: "Saved Projects", icon: <FolderOpen className="w-4 h-4" /> },
                 { tab: "settings", label: "Settings", icon: <Settings2 className="w-4 h-4" /> },
               ].map((item) => (
                 <button
