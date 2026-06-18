@@ -6,20 +6,30 @@ COST_OPTIMIZATION_PROMPT = "Optimize cost"
 COMPLEXITY_AUDITOR_PROMPT = "Audit complexity"
 ARCHITECTURE_REASONING_PROMPT = "Reason architecture"
 ARCHITECTURE_PLANNING_PROMPT = """You are an expert Cloud Architect.
-Your task is to take the analyzed requirements and generate a highly detailed, production-ready visual topology graph.
+Your task is to take the analyzed requirements and generate a highly detailed, enterprise-grade production-ready visual topology graph.
 
 CRITICAL INSTRUCTIONS:
-1. Analyze the application type, security constraints, and performance requirements provided in the input.
-2. Design a proper Virtual Network (VNet/VPC) architecture.
-3. Assign each node to an appropriate subnet using the `data.subnet` property (e.g., "public-ingress-subnet", "private-app-subnet", "secure-data-subnet", "management-subnet").
-4. If security requirements are strict, include security components like WAFs, Firewalls, Key Vaults, and Private Endpoints.
-5. If performance requirements are high, include CDNs, Load Balancers, and Caching layers (Redis/Memcached).
-6. Ensure all components are properly connected with logical network flows via "edges".
-7. CRITICAL TERRAFORM CONVENTIONS: The infrastructure compiler requires specific Node IDs to bind variables correctly:
-   - Database nodes MUST have an id starting with "database" (e.g., "database-postgres").
-   - Cache nodes MUST have an id starting with "cache" (e.g., "cache-redis").
-   - Key Vault nodes MUST have an id starting with "vault" (e.g., "vault-keys").
-   - Do not use generic IDs or the Terraform code will be missing environment variables and fail to deploy.
+1. Design a complete visual networking hierarchy boundaries. The returned nodes list MUST contain parent container nodes:
+   - "region-group" (type: "RegionGroupNode")
+   - "rg-group" (type: "ResourceGroupNode", parentNode: "region-group")
+   - "vnet-group" (type: "VNetGroupNode", parentNode: "rg-group")
+   - Subnets (type: "SubnetGroupNode", parentNode: "vnet-group"). You MUST create exactly these 5 subnets:
+     * "subnet-ingress" (Ingress Subnet 10.0.1.0/24)
+     * "subnet-app" (Application Subnet 10.0.2.0/24)
+     * "subnet-data" (Data Subnet 10.0.3.0/24)
+     * "subnet-mgmt" (Management Subnet 10.0.4.0/24)
+     * "subnet-pe" (Private Endpoint Subnet 10.0.5.0/24)
+2. Every cloud resource node MUST reside inside one of the 5 subnets by setting its `parentNode` to that subnet's ID.
+3. Node coordinates (`position.x`, `position.y`) for resources MUST be relative coordinates inside their parent subnet container. Keep them offset from (0,0) (e.g. x: 30, y: 60).
+4. The output must represent a complete topology containing at least 25+ nodes and 30+ edges to cover load balancers, DNS, CDNs, firewalls, compute instances, node pools, microservices, databases, storage caches, vaults, private endpoints, monitoring analytics, and backup vaults.
+5. CRITICAL TERRAFORM CONVENTIONS: The infrastructure compiler requires specific Node IDs to bind variables correctly:
+   - Database nodes MUST have an id starting with "database" or "db-" (e.g., "db-postgres").
+   - Cache nodes MUST have an id starting with "cache" or "redis-" (e.g., "redis-cache").
+   - Key Vault nodes MUST have an id starting with "vault" or "keyvault-" (e.g., "keyvault-keys").
+   - Compute/Backend services must be defined as "BackendNode" or "FrontendNode".
+
+Allowed Node types are:
+'GatewayNode', 'FrontendNode', 'BackendNode', 'DatabaseNode', 'CacheNode', 'StorageNode', 'MonitoringNode', 'SecurityNode', 'RegionGroupNode', 'ResourceGroupNode', 'VNetGroupNode', 'SubnetGroupNode'
 
 You must output ONLY valid JSON.
 The JSON must contain exactly three keys: "nodes", "edges", and "services".
@@ -29,11 +39,20 @@ Expected JSON Schema:
   "nodes": [
     {
       "id": "string (unique identifier)",
-      "type": "string (MUST be one of: 'GatewayNode', 'FrontendNode', 'BackendNode', 'DatabaseNode', 'CacheNode', 'StorageNode', 'MonitoringNode', 'SecurityNode')",
+      "type": "string",
       "label": "string",
+      "parentNode": "string (parent container node ID)",
+      "position": {
+        "x": number,
+        "y": number
+      },
+      "style": {
+        "width": number,
+        "height": number
+      },
       "data": {
-        "subnet": "string (optional)",
-        "details": "string (optional)"
+        "subnet": "string (subnet ID reference)",
+        "details": "string"
       }
     }
   ],
@@ -42,19 +61,19 @@ Expected JSON Schema:
       "id": "string",
       "source": "string (node id)",
       "target": "string (node id)",
-      "label": "string (optional)"
+      "animated": true
     }
   ],
   "services": [
     {
       "name": "string",
-      "type": "string",
+      "category": "string",
       "description": "string"
     }
   ]
 }
 
-Ensure your response is a valid JSON object matching this schema. Do not include markdown blocks."""
+Ensure your response is a valid JSON object matching this schema. Do not include markdown blocks like ```json."""
 ARCHITECTURE_EXPLANATION_PROMPT = """You are a Senior Cloud Architect, Solutions Architect, DevOps Engineer, Network Engineer, Security Architect, and FinOps Specialist.
 
 Your task is to generate a COMPLETE PRODUCTION-READY CLOUD ARCHITECTURE based on the user requirements.

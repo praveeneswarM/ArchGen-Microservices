@@ -217,41 +217,171 @@ async def generate_terraform(request: TerraformRequest):
 
 @router.post('/optimize-cost')
 async def optimize_cost(payload: Dict[str, Any], request: Request):
-    llm_client = request.app.state.provider_manager
-    request_payload = payload
     try:
-        nodes = request_payload.get('nodes', [])
-        services = request_payload.get('services', [])
-        plan = {'nodes': nodes, 'services': services}
-        reqs = 'user-customized budget'
+        nodes = payload.get('nodes', [])
+        
+        # Base pricing catalog mapping
+        catalog = {
+            "GatewayNode": 60.0,
+            "FrontendNode": 30.0,
+            "BackendNode": 75.0,
+            "DatabaseNode": 115.0,
+            "CacheNode": 45.0,
+            "StorageNode": 25.0,
+            "SecurityNode": 15.0,
+            "MonitoringNode": 20.0,
+        }
 
-        cost_agent = CostOptimizationAgent(client=llm_client)
-        return await cost_agent.optimize(plan, reqs)
+        breakdown = []
+        total = 0.0
+
+        for node in nodes:
+            n_type = node.get("type", "")
+            if n_type in ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"]:
+                continue
+            
+            label = node.get("data", {}).get("label", n_type)
+            # Check custom metadata pricing tier
+            meta = node.get("data", {}).get("customMetadata", {})
+            tier = meta.get("pricingTier", "Standard")
+
+            base_cost = catalog.get(n_type, 25.0)
+            if tier == "Premium":
+                base_cost *= 2.0
+            elif tier == "Basic":
+                base_cost *= 0.5
+
+            total += base_cost
+            breakdown.append({
+                "service": label,
+                "cost": base_cost,
+                "reason": f"Provisioned under {tier} tier configuration rules."
+            })
+
+        recommendations = [
+            "Enable Auto-scaling boundaries on the Application Container Node pool to down-scale during idle periods.",
+            "Implement multi-region database replication only in production scopes to minimize dev-environment overhead.",
+            "Configure cold lifecycle storage rules for logs archived in Storage Account after 15 days."
+        ]
+
+        if total > 500.0:
+            recommendations.append("Consolidate multiple small databases into a single PostgreSQL Flexible Server database server.")
+
+        return {
+            "estimated_monthly_cost": total,
+            "cost_breakdown": breakdown,
+            "optimization_recommendations": recommendations,
+            "cost_score": 90 if total < 500 else 75
+        }
     except Exception as e:
         return {'error': str(e)}
 
 @router.post('/validate-architecture')
 async def validate_architecture(payload: Dict[str, Any], request: Request):
-    llm_client = request.app.state.provider_manager
-    request_payload = payload
     try:
-        nodes = request_payload.get('nodes', [])
-        services = request_payload.get('services', [])
-        plan = {'nodes': nodes, 'services': services}
-        reqs = 'custom security'
+        nodes = payload.get('nodes', [])
+        edges = payload.get('edges', [])
+        
+        findings = []
+        score = 100
 
-        security_agent = SecurityOptimizationAgent(client=llm_client)
-        return await security_agent.optimize_security(plan, reqs)
+        # Extract node types and IDs
+        node_types = {n.get("id"): n.get("type") for n in nodes}
+        node_labels = {n.get("id"): n.get("data", {}).get("label", "").lower() for n in nodes}
+
+        # 1. Check Key Vault Presence
+        has_vault = any(t == "SecurityNode" and "vault" in node_labels.get(nid, "") for nid, t in node_types.items())
+        if not has_vault:
+            score -= 15
+            findings.append({
+                "severity": "High",
+                "description": "Secrets vault repository (Key Vault / Secrets Manager) is missing.",
+                "remediation": "Deploy a dedicated Key Vault node inside the management subnet to encrypt resource keys."
+            })
+
+        # 2. Check Database exposure and replica standby
+        db_nodes = [nid for nid, t in node_types.items() if t == "DatabaseNode"]
+        has_replica = any("replica" in node_labels.get(db_id, "") for db_id in db_nodes)
+        
+        if db_nodes and not has_replica:
+            score -= 10
+            findings.append({
+                "severity": "Medium",
+                "description": "Database high availability read-replica standby is missing.",
+                "remediation": "Deploy a read-replica DatabaseNode inside the data subnet to ensure zero point of failure redundancy."
+            })
+
+        # 3. Check for public databases
+        for db_id in db_nodes:
+            # Check if database has incoming edge from internet or gateway without an app cluster
+            incoming = [e.get("source") for e in edges if e.get("target") == db_id]
+            for source in incoming:
+                if node_types.get(source) in ["GatewayNode"]:
+                    score -= 20
+                    findings.append({
+                        "severity": "High",
+                        "description": f"Database '{node_labels.get(db_id)}' is directly connected to Ingress Gateway without a proxy compute layer.",
+                        "remediation": "Route ingress traffic through Application backend compute clusters and establish private endpoints."
+                    })
+
+        # 4. Check for WAF at Ingress
+        has_waf = any("waf" in label for label in node_labels.values())
+        if not has_waf:
+            score -= 10
+            findings.append({
+                "severity": "Medium",
+                "description": "Web Application Firewall (WAF) is not configured at ingress gateway boundaries.",
+                "remediation": "Inject an Azure WAF / AWS WAF security layer before the Application Gateway load balancer."
+            })
+
+        # 5. Check for Network Security Groups (NSGs)
+        has_nsgs = any("nsg" in label for label in node_labels.values())
+        if not has_nsgs:
+            score -= 10
+            findings.append({
+                "severity": "Medium",
+                "description": "Network Security Groups (NSGs) are missing from the subnets.",
+                "remediation": "Associate a Network Security Group with each Subnet node to define inbound/outbound rules."
+            })
+
+        # Compliance mapping calculations
+        compliance = [
+            {
+                "standard": "SOC2 Type II",
+                "status": "Compliant" if score >= 80 else "Partially Compliant",
+                "notes": "Requires secure identity vaults and ingress firewalls."
+            },
+            {
+                "standard": "PCI DSS Security",
+                "status": "Compliant" if has_vault and has_nsgs and score >= 85 else "Non-Compliant",
+                "notes": "Enforces complete encryption of transactional databases and strict subnet boundaries."
+            },
+            {
+                "standard": "HIPAA Privacy",
+                "status": "Compliant" if score >= 75 else "Partially Compliant",
+                "notes": "Requires database access trace monitoring and encryption keys."
+            },
+            {
+                "standard": "ISO 27001",
+                "status": "Compliant" if score >= 90 else "Partially Compliant",
+                "notes": "Information security management controls check."
+            }
+        ]
+
+        return {
+            "security_score": max(50, score),
+            "security_findings": findings,
+            "compliance_checks": compliance
+        }
     except Exception as e:
         return {'error': str(e)}
 
 @router.post('/explain-architecture')
 async def explain_architecture(payload: Dict[str, Any], request: Request):
     llm_client = request.app.state.provider_manager
-    request_payload = payload
     try:
-        nodes = request_payload.get('nodes', [])
-        services = request_payload.get('services', [])
+        nodes = payload.get('nodes', [])
+        services = payload.get('services', [])
         plan = {'nodes': nodes, 'services': services}
         reqs = 'user-customized'
 
@@ -261,6 +391,72 @@ async def explain_architecture(payload: Dict[str, Any], request: Request):
         return {'error': str(e)}
 
 @router.post('/ai-assist')
-async def ai_assist(request: AiAssistRequest):
-    # Deterministic manipulation
-    pass
+async def ai_assist(payload: Dict[str, Any], request: Request):
+    try:
+        nodes = payload.get('nodes', [])
+        edges = payload.get('edges', [])
+        services = payload.get('services', [])
+        action = payload.get('action', "")
+
+        # Handle deterministic AI-assist transformations
+        updated_nodes = list(nodes)
+        updated_edges = list(edges)
+
+        provider = "azure"
+        for n in nodes:
+            p = n.get("data", {}).get("provider")
+            if p:
+                provider = p
+                break
+
+        if action == "optimize_security":
+            # Inject Key Vault and WAF if missing
+            has_kv = any("vault" in str(n.get("id")).lower() for n in nodes)
+            if not has_kv:
+                kv_id = f"keyvault-{int(asyncio.get_event_loop().time())}"
+                updated_nodes.append({
+                    "id": kv_id,
+                    "type": "SecurityNode",
+                    "parentNode": "subnet-mgmt",
+                    "position": {"x": 250, "y": 60},
+                    "data": {"label": "Key Vault (Secure)", "subnet": "subnet-mgmt", "provider": provider}
+                })
+        elif action == "add_monitoring":
+            # Inject Monitor and Log Analytics
+            has_mon = any("monitor" in str(n.get("id")).lower() for n in nodes)
+            if not has_mon:
+                mon_id = f"monitor-{int(asyncio.get_event_loop().time())}"
+                updated_nodes.append({
+                    "id": mon_id,
+                    "type": "MonitoringNode",
+                    "parentNode": "subnet-mgmt",
+                    "position": {"x": 250, "y": 160},
+                    "data": {"label": "Azure Monitor Dashboard", "subnet": "subnet-mgmt", "provider": provider}
+                })
+        elif action == "add_ha":
+            # Inject Database replica
+            has_rep = any("replica" in str(n.get("id")).lower() for n in nodes)
+            db_primary = next((n for n in nodes if n.get("type") == "DatabaseNode"), None)
+            if db_primary and not has_rep:
+                rep_id = f"db-replica-{int(asyncio.get_event_loop().time())}"
+                updated_nodes.append({
+                    "id": rep_id,
+                    "type": "DatabaseNode",
+                    "parentNode": "subnet-data",
+                    "position": {"x": 280, "y": 60},
+                    "data": {"label": "Database HA Standby Replica", "subnet": "subnet-data", "provider": provider}
+                })
+                updated_edges.append({
+                    "id": f"e-{db_primary.get('id')}-{rep_id}",
+                    "source": db_primary.get("id"),
+                    "target": rep_id,
+                    "animated": False
+                })
+
+        return {
+            "nodes": updated_nodes,
+            "edges": updated_edges,
+            "services": services
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

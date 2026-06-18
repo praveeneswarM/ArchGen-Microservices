@@ -1,41 +1,57 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { TerraformResponse } from "../types";
 import { Copy, Check, Terminal, FileCode } from "lucide-react";
 
 interface TerraformPanelProps {
   terraform: TerraformResponse | null;
   isLoading: boolean;
+  onCodeChange?: (newCode: string, tab: "main" | "variables" | "outputs" | "tfvars") => void;
 }
 
-export default function TerraformPanel({ terraform, isLoading }: TerraformPanelProps) {
+export default function TerraformPanel({ terraform, isLoading, onCodeChange }: TerraformPanelProps) {
   const [activeTab, setActiveTab] = useState<"main" | "variables" | "outputs" | "tfvars" | "guide">("main");
   const [copied, setCopied] = useState(false);
+  const [editCode, setEditCode] = useState("");
 
-  const getCodeContent = () => {
-    if (!terraform) return "";
+  // Sync internal state when activeTab or terraform changes
+  useEffect(() => {
+    if (!terraform) {
+      setEditCode("");
+      return;
+    }
     switch (activeTab) {
       case "main":
-        return terraform.main_tf;
+        setEditCode(terraform.main_tf || "");
+        break;
       case "variables":
-        return terraform.variables_tf;
+        setEditCode(terraform.variables_tf || "");
+        break;
       case "outputs":
-        return terraform.outputs_tf;
+        setEditCode(terraform.outputs_tf || "");
+        break;
       case "tfvars":
-        return terraform.terraform_tfvars;
+        setEditCode(terraform.terraform_tfvars || "");
+        break;
       case "guide":
-        return terraform.instructions;
-      default:
-        return "";
+        setEditCode(terraform.instructions || "");
+        break;
+    }
+  }, [activeTab, terraform]);
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setEditCode(val);
+    if (onCodeChange && activeTab !== "guide") {
+      onCodeChange(val, activeTab);
     }
   };
 
   const handleCopy = async () => {
-    const code = getCodeContent();
-    if (!code) return;
+    if (!editCode) return;
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(editCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -45,19 +61,19 @@ export default function TerraformPanel({ terraform, isLoading }: TerraformPanelP
 
   if (isLoading && !terraform) {
     return (
-      <div className="flex h-72 flex-col items-center justify-center rounded-3xl border border-zinc-200 bg-white p-6">
-        <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-950"></div>
-        <p className="text-xs font-mono text-zinc-500">Compiling Terraform configurations...</p>
+      <div className="flex h-72 flex-col items-center justify-center rounded-3xl border border-white/5 bg-[#090b11]/50 p-6 backdrop-blur-xl">
+        <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-cyan-500"></div>
+        <p className="text-xs font-mono text-slate-400">Compiling Terraform configurations...</p>
       </div>
     );
   }
 
   if (!terraform) {
     return (
-      <div className="flex h-72 flex-col items-center justify-center rounded-3xl border border-zinc-200 bg-white p-6 text-center">
-        <FileCode className="mb-3 h-8 w-8 text-zinc-950/40" />
-        <p className="text-sm font-semibold text-zinc-950">No Infrastructure Generated</p>
-        <p className="mt-1 max-w-xs text-xs text-zinc-500 font-mono">
+      <div className="flex h-72 flex-col items-center justify-center rounded-3xl border border-white/5 bg-[#090b11]/50 p-6 text-center backdrop-blur-xl">
+        <FileCode className="mb-3 h-8 w-8 text-slate-500" />
+        <p className="text-sm font-semibold text-slate-200">No Infrastructure Generated</p>
+        <p className="mt-1 max-w-xs text-xs text-slate-500 font-mono">
           Enter cloud specifications to output deployable Terraform.
         </p>
       </div>
@@ -65,8 +81,8 @@ export default function TerraformPanel({ terraform, isLoading }: TerraformPanelP
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white">
-      <div className="flex items-center justify-between gap-2 overflow-x-auto border-b border-zinc-200 bg-zinc-50 px-4 py-2">
+    <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-white/5 bg-[#090b11]/50 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-2 overflow-x-auto border-b border-white/5 bg-[#05070c]/50 px-4 py-2">
         <div className="flex min-w-max gap-1.5">
           {[
             ["main", "main.tf"],
@@ -78,8 +94,10 @@ export default function TerraformPanel({ terraform, isLoading }: TerraformPanelP
             <button
               key={key}
               onClick={() => setActiveTab(key as any)}
-              className={`rounded-full px-3 py-1.5 text-xs font-mono transition ${
-                activeTab === key ? "bg-zinc-950 text-white" : "text-zinc-500 hover:text-zinc-950"
+              className={`rounded-full px-3 py-1.5 text-xs font-mono transition-all ${
+                activeTab === key 
+                  ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/35" 
+                  : "text-slate-400 hover:text-white"
               }`}
             >
               {label}
@@ -89,41 +107,53 @@ export default function TerraformPanel({ terraform, isLoading }: TerraformPanelP
 
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-mono text-zinc-700 transition hover:border-zinc-950"
-          title="Copy block to clipboard"
+          className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#0b0f19] px-3 py-1.5 text-xs font-mono text-slate-300 transition hover:text-white hover:border-cyan-500/35"
+          title="Copy to clipboard"
         >
           {copied ? (
             <>
-              <Check className="h-3.5 w-3.5 text-zinc-950" />
+              <Check className="h-3.5 w-3.5 text-emerald-400" />
               <span>Copied!</span>
             </>
           ) : (
             <>
-              <Copy className="h-3.5 w-3.5 text-zinc-950" />
+              <Copy className="h-3.5 w-3.5 text-slate-400" />
               <span>Copy</span>
             </>
           )}
         </button>
       </div>
 
-      <div className="relative h-96 flex-1 overflow-y-auto bg-white p-4">
+      <div className="relative h-[450px] flex-grow overflow-hidden bg-[#0b0f19]/40">
         {isLoading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70">
-            <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-mono text-zinc-700">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#080b11]/80">
+            <div className="flex items-center gap-2 rounded-full border border-white/5 bg-[#090b11] px-4 py-2 text-xs font-mono text-cyan-400">
               <Terminal className="h-4 w-4 animate-spin" />
               <span>Regenerating HCL Stack...</span>
             </div>
           </div>
         )}
-        <pre className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-700 font-mono">{getCodeContent()}</pre>
+        
+        {activeTab === "guide" ? (
+          <pre className="w-full h-full p-4 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-300 font-mono">
+            {editCode}
+          </pre>
+        ) : (
+          <textarea
+            value={editCode}
+            onChange={handleTextChange}
+            className="w-full h-full p-4 bg-[#0b0f19]/80 text-xs leading-relaxed text-cyan-400 font-mono focus:outline-none resize-none overflow-y-auto border-none"
+            spellCheck={false}
+          />
+        )}
       </div>
 
-      <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-2 text-[9px] font-mono text-zinc-500">
+      <div className="flex items-center justify-between border-t border-white/5 bg-[#05070c]/50 px-4 py-2 text-[9px] font-mono text-slate-500">
         <span className="flex items-center gap-1">
-          <Terminal className="h-3 w-3 text-zinc-950" />
-          <span>Output format: HCL-compliant template files</span>
+          <Terminal className="h-3 w-3 text-cyan-400" />
+          <span>Bi-directional HCL Editor Active</span>
         </span>
-        <span>Scope: Local Directory</span>
+        <span>Scope: Workspace Sync</span>
       </div>
     </div>
   );

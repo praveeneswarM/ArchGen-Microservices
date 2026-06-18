@@ -22,6 +22,7 @@ export function useArchitecture() {
 
   // Store active debounce timers
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hclSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper to enrich nodes with Draw.io service types and cost badges
   const enrichNodeData = useCallback((nodes: NodeSchema[]): NodeSchema[] => {
@@ -77,14 +78,11 @@ export function useArchitecture() {
 
   // Saves current visual graph onto the history stack before making any change
   const pushToHistory = useCallback((nodes: NodeSchema[], edges: EdgeSchema[], services: ServiceSchema[]) => {
-    // Deep clone to preserve coordinates
     const clone = JSON.parse(JSON.stringify({ nodes, edges, services }));
     historyStack.current.push(clone);
-    // Cap history at 50 states to prevent memory creep
     if (historyStack.current.length > 50) {
       historyStack.current.shift();
     }
-    // Clear redo history
     redoStack.current = [];
   }, []);
 
@@ -301,7 +299,6 @@ export function useArchitecture() {
     // Save state onto history stack first!
     pushToHistory(architecture.nodes, architecture.edges, architecture.services);
 
-    // Clear sync timer
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
     }
@@ -319,16 +316,103 @@ export function useArchitecture() {
     if (isApproved) {
       syncTimeoutRef.current = setTimeout(() => {
         syncCanvasWithBackend(enrichedNewNodes, newEdges, newServices, architecture.cloud_provider);
-      }, 600);
+      }, 800);
     }
   }, [architecture, isApproved, enrichNodeData, pushToHistory, syncCanvasWithBackend]);
+
+  // Bi-directional Synchronization: Parse HCL changes and apply them back to the Canvas
+  const handleHclCodeChange = useCallback((newCode: string, tab: "main" | "variables" | "outputs" | "tfvars") => {
+    if (!architecture || !terraform) return;
+    
+    // Update local terraform block state first
+    const updatedTf = { ...terraform };
+    if (tab === "main") updatedTf.main_tf = newCode;
+    if (tab === "variables") updatedTf.variables_tf = newCode;
+    if (tab === "outputs") updatedTf.outputs_tf = newCode;
+    if (tab === "tfvars") updatedTf.terraform_tfvars = newCode;
+    setTerraform(updatedTf);
+
+    // Debounce canvas sync updates to prevent layout freeze during typing
+    if (hclSyncTimeoutRef.current) {
+      clearTimeout(hclSyncTimeoutRef.current);
+    }
+
+    hclSyncTimeoutRef.current = setTimeout(() => {
+      let canvasModified = false;
+      const nextNodes = architecture.nodes.map((node) => {
+        const nextNode = { ...node };
+        const label = (node.data.label || "").toLowerCase();
+
+        // 1. Detect AKS Node/Instance count changes in HCL code
+        if (node.type === "BackendNode" && label.includes("aks")) {
+          const countMatch = newCode.match(/node_count\s*=\s*(\d+)/) || newCode.match(/capacity\s*=\s*(\d+)/);
+          if (countMatch) {
+            const countVal = countMatch[1];
+            const meta = (nextNode.data as any).customMetadata || {};
+            if (meta.maxReplicas !== countVal) {
+              nextNode.data = {
+                ...nextNode.data,
+                label: `AKS Cluster (${countVal} Nodes)`,
+                customMetadata: { ...meta, maxReplicas: countVal }
+              };
+              canvasModified = true;
+            }
+          }
+        }
+
+        // 2. Detect PostgreSQL flexible server pricing tier changes
+        if (node.type === "DatabaseNode" && label.includes("postgres")) {
+          const skuMatch = newCode.match(/sku_name\s*=\s*"([^"]+)"/);
+          if (skuMatch) {
+            const skuVal = skuMatch[1];
+            const meta = (nextNode.data as any).customMetadata || {};
+            const derivedTier = skuVal.includes("GP_") ? "Premium" : skuVal.includes("B_") ? "Basic" : "Standard";
+            if (meta.pricingTier !== derivedTier) {
+              nextNode.data = {
+                ...nextNode.data,
+                cost: derivedTier === "Premium" ? "~$240/mo" : derivedTier === "Basic" ? "~$45/mo" : "~$115/mo",
+                customMetadata: { ...meta, pricingTier: derivedTier }
+              };
+              canvasModified = true;
+            }
+          }
+        }
+
+        return nextNode;
+      });
+
+      if (canvasModified) {
+        setArchitecture({
+          ...architecture,
+          nodes: nextNodes
+        });
+        
+        // Re-validate details to update scores and cost optimization recommendations
+        validateSecurity(nextNodes, architecture.services).then((securityData) => {
+          optimizeCost(nextNodes, architecture.services).then((costData) => {
+            setArchitecture(prev => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                cost_estimate: parseFloat(costData.estimated_monthly_cost || 120.0),
+                cost_breakdown: costData.cost_breakdown || [],
+                optimization_recommendations: costData.optimization_recommendations || [],
+                security_score: parseInt(securityData.security_score || 85),
+                security_findings: securityData.security_findings || [],
+                compliance_checks: securityData.compliance_checks || []
+              };
+            });
+          });
+        });
+      }
+    }, 1000);
+  }, [architecture, terraform]);
 
   // Triggers AI Refactoring of the active layout graph (Figma cloud-AI style)
   const triggerAiAssist = useCallback(async (action: string) => {
     if (!architecture) return;
     setTfLoading(true);
     try {
-      // Save current state in history
       pushToHistory(architecture.nodes, architecture.edges, architecture.services);
       
       const result = await aiAssistRefactor(
@@ -350,7 +434,6 @@ export function useArchitecture() {
         };
       });
 
-      // Recalculate HCL and audits immediately representing AI assist mutations
       await syncCanvasWithBackend(enrichedNodes, result.edges, result.services, architecture.cloud_provider);
       
     } catch (err: any) {
@@ -375,6 +458,7 @@ export function useArchitecture() {
     undo,
     redo,
     triggerAiAssist,
+    handleHclCodeChange,
   };
 }
 export type UseArchitectureReturn = ReturnType<typeof useArchitecture>;

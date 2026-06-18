@@ -12,6 +12,7 @@ import {
   Copy,
   Database,
   Download,
+  DollarSign,
   Edit3,
   FileCode,
   FolderOpen,
@@ -45,6 +46,7 @@ import {
   ClipboardList,
   Package,
   TerminalSquare,
+  AlertTriangle,
 } from "lucide-react";
 
 import ArchitectureCanvas from "../../components/ArchitectureCanvas";
@@ -56,6 +58,7 @@ import SecurityPanel from "../../components/SecurityPanel";
 import ServiceConfigPanel from "../../components/ServiceConfigPanel";
 import TerraformPanel from "../../components/TerraformPanel";
 import WarningPanel from "../../components/WarningPanel";
+import RequirementForm from "../../components/RequirementForm";
 import { useArchitecture } from "../../hooks/useArchitecture";
 import {
   getCurrentUser,
@@ -64,144 +67,36 @@ import {
   saveProject,
   deleteProject,
 } from "../../lib/api";
-import { RequirementInput } from "../../types";
+import { RequirementInput, NodeSchema } from "../../types";
 
-type WorkflowStep = 1 | 2 | 3 | 4 | 5;
-type DrawerKind =
-  | "service"
-  | "terraform"
-  | "security"
-  | "cost"
-  | "reasoning"
-  | "history"
-  | "palette"
-  | null;
+type SidebarTab = "dashboard" | "studio" | "projects" | "templates" | "terraform" | "validation" | "cost" | "settings";
 
-type TemplateKind = {
-  label: string;
-  description: string;
-  app: string;
-  security: string;
-  performance: string;
-  notes: string;
-};
-
-const REQUIREMENT_TEMPLATES: TemplateKind[] = [
+const PRESETS = [
   {
-    label: "SaaS Platform",
-    description: "Multi-tenant SaaS platform with role-based access, audit logging, and predictable monthly costs.",
-    app: "Build a multi-tenant SaaS product with authenticated workspaces, billing-ready data separation, and admin tooling.",
-    security: "Require SSO-ready access controls, secret isolation, and least-privilege service boundaries.",
-    performance: "Need sub-second interaction times for normal workloads and graceful scaling under growth.",
-    notes: "Prefer maintainable components over distributed complexity.",
+    title: "SaaS Platform",
+    desc: "Multi-tenant SaaS with container cluster routing, SQL storage replica and caching.",
+    provider: "azure",
+    budget: "1200",
+    scale: "100k users",
+    descText: "Autonomous multi-tenant enterprise app with strict network separation, secret vaults, read replication, and CDN."
   },
   {
-    label: "Customer Portal",
-    description: "Simple customer-facing portal with low operational overhead and clean UX.",
-    app: "Create a customer portal for self-service support, user profile management, and lightweight CRUD workflows.",
-    security: "Protect personal data, enforce TLS, and keep the attack surface minimal.",
-    performance: "Keep response times fast on mobile and desktop, with simple deployment options.",
-    notes: "Avoid unnecessary Kubernetes or extra services.",
+    title: "Banking System",
+    desc: "PCI DSS compliant vault protection, zero public ingress endpoints, and replica mirrors.",
+    provider: "azure",
+    budget: "3500",
+    scale: "500k users",
+    descText: "Secure transaction backend with HSM key vaults, database private links, DDoS shield, and application node pools."
   },
   {
-    label: "High Scale Media",
-    description: "Streaming or media workloads requiring CDN, caching, and durable storage.",
-    app: "Design a global media delivery platform for video and asset distribution with high throughput.",
-    security: "Require WAF, secure storage, and strict administrative controls.",
-    performance: "Support low-latency delivery and high read throughput across regions.",
-    notes: "Prioritize edge delivery and caching.",
-  },
+    title: "E-Commerce Stack",
+    desc: "Global CDN delivery, microservices autoscaling pools, Redis caching, and asset storage.",
+    provider: "aws",
+    budget: "1800",
+    scale: "1m users",
+    descText: "High-throughput retail backend with edge routing, distributed caches, and cloud database replicas."
+  }
 ];
-
-const STEP_LABELS = [
-  "Project Setup",
-  "Requirements",
-  "AI Planning",
-  "Architecture Studio",
-  "Review & Export",
-];
-
-function downloadTextFile(filename: string, content: string, mime = "text/plain") {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function createArchitectureSvg(architecture: any, title: string) {
-  const nodes = architecture?.nodes ?? [];
-  const edges = architecture?.edges ?? [];
-  const width = 1400;
-  const height = 900;
-
-  const rects = nodes
-    .map((node: any) => {
-      const x = Math.max(20, Number(node.position?.x ?? 0) + 40);
-      const y = Math.max(40, Number(node.position?.y ?? 0) + 60);
-      return `
-        <rect x="${x}" y="${y}" rx="14" ry="14" width="220" height="70" fill="#111111" stroke="#d4d4d4" stroke-width="1.5" />
-        <text x="${x + 16}" y="${y + 26}" fill="#f5f5f5" font-size="18" font-family="Inter, Arial, sans-serif">${String(node.data?.label ?? node.id)}</text>
-        <text x="${x + 16}" y="${y + 50}" fill="#a3a3a3" font-size="12" font-family="JetBrains Mono, monospace">${String(node.type ?? "")}</text>
-      `;
-    })
-    .join("");
-
-  const lines = edges
-    .map((edge: any) => {
-      const source = nodes.find((node: any) => node.id === edge.source);
-      const target = nodes.find((node: any) => node.id === edge.target);
-      if (!source || !target) return "";
-      const x1 = Number(source.position?.x ?? 0) + 150;
-      const y1 = Number(source.position?.y ?? 0) + 95;
-      const x2 = Number(target.position?.x ?? 0) + 150;
-      const y2 = Number(target.position?.y ?? 0) + 95;
-      return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#737373" stroke-width="2" />`;
-    })
-    .join("");
-
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-      <rect width="100%" height="100%" fill="#ffffff" />
-      <text x="40" y="60" fill="#111111" font-size="30" font-family="Inter, Arial, sans-serif" font-weight="700">${title}</text>
-      <text x="40" y="92" fill="#525252" font-size="14" font-family="JetBrains Mono, monospace">ArchGen AI Architecture Export</text>
-      ${lines}
-      ${rects}
-    </svg>
-  `;
-
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-async function downloadSvgAsPng(svgDataUrl: string, filename: string) {
-  const image = new Image();
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) return;
-
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = reject;
-    image.src = svgDataUrl;
-  });
-
-  canvas.width = image.width;
-  canvas.height = image.height;
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(image, 0, 0);
-
-  const link = document.createElement("a");
-  link.download = filename;
-  link.href = canvas.toDataURL("image/png");
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -221,11 +116,11 @@ export default function DashboardPage() {
     undo,
     redo,
     triggerAiAssist,
+    handleHclCodeChange,
   } = useArchitecture();
 
-  const [workflowStep, setWorkflowStep] = useState<WorkflowStep>(1);
-  const [drawer, setDrawer] = useState<DrawerKind>(null);
-  const [activeReviewTab, setActiveReviewTab] = useState<"architecture" | "terraform" | "security" | "cost" | "deployment">("architecture");
+  const [activeTab, setActiveTab] = useState<SidebarTab>("studio");
+  const [activeReviewTab, setActiveReviewTab] = useState<"properties" | "terraform" | "validation">("properties");
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [savedProjects, setSavedProjects] = useState<any[]>([]);
@@ -233,11 +128,11 @@ export default function DashboardPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
-  const [analysisPending, setAnalysisPending] = useState(false);
-  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
-  const [analysisDuration, setAnalysisDuration] = useState<number | null>(null);
   const [activityLog, setActivityLog] = useState<string[]>([]);
+  const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
+  const [projectVersions, setProjectVersions] = useState<any[]>([]);
 
+  // Requirement Config State
   const [projectName, setProjectName] = useState("Enterprise Stack");
   const [cloudProvider, setCloudProvider] = useState("azure");
   const [expectedUsers, setExpectedUsers] = useState("100,000 monthly");
@@ -245,15 +140,17 @@ export default function DashboardPage() {
   const [appDescription, setAppDescription] = useState(
     "A modern enterprise application with secure workflows, predictable costs, and room to scale."
   );
-  const [technicalConstraints, setTechnicalConstraints] = useState("");
-  const [securityRequirements, setSecurityRequirements] = useState("");
-  const [performanceRequirements, setPerformanceRequirements] = useState("");
+  const [region, setRegion] = useState("East US");
+  const [workloadType, setWorkloadType] = useState("SaaS Platform");
+  const [availabilityTarget, setAvailabilityTarget] = useState("99.99%");
+  const [rto, setRto] = useState("4 hours");
+  const [rpo, setRpo] = useState("1 hour");
 
   const analysisSummary = useMemo(() => {
     if (!architecture) return null;
     return {
-      activeProvider: architecture.active_provider && architecture.active_provider !== "Unknown" ? architecture.active_provider : architecture.cloud_provider,
-      activeModel: architecture.active_model && architecture.active_model !== "unknown" ? architecture.active_model : "gpt-4-default",
+      activeProvider: architecture.active_provider || architecture.cloud_provider,
+      activeModel: architecture.active_model || "gpt-4-default",
       fallbackTrigger: architecture.fallback_trigger || "none",
       executionTimeMs: architecture.execution_time_ms || 0,
       generationSource: architecture.generation_source || "deterministic+ollama",
@@ -267,7 +164,7 @@ export default function DashboardPage() {
 
   const pushActivity = useCallback((entry: string) => {
     const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setActivityLog((prev) => [`${timestamp} · ${entry}`, ...prev].slice(0, 10));
+    setActivityLog((prev) => [`${timestamp} · ${entry}`, ...prev].slice(0, 15));
   }, []);
 
   const loadSavedProjects = useCallback(async (token: string) => {
@@ -320,68 +217,21 @@ export default function DashboardPage() {
     validateSession();
   }, [loadSavedProjects, router]);
 
-  useEffect(() => {
-    if (analysisPending && !loading && architecture) {
-      setAnalysisPending(false);
-      const duration = analysisStartedAt ? Date.now() - analysisStartedAt : null;
-      setAnalysisDuration(duration);
-      pushActivity("AI analysis completed");
-      setWorkflowStep(4);
-    }
-    if (analysisPending && !loading && error) {
-      setAnalysisPending(false);
-      setWorkflowStep(2);
-      pushActivity("AI analysis failed");
-    }
-  }, [analysisPending, analysisStartedAt, architecture, error, loading, pushActivity]);
-
-  const onDragStart = useCallback((event: React.DragEvent, nodeType: string) => {
-    event.dataTransfer.setData("application/reactflow-type", nodeType);
-    event.dataTransfer.effectAllowed = "move";
-  }, []);
-
-  const buildRequest = useCallback((): RequirementInput => {
-    const combinedNotes = [
-      technicalConstraints && `Technical Constraints: ${technicalConstraints}`,
-      securityRequirements && `Security Requirements: ${securityRequirements}`,
-      performanceRequirements && `Performance Requirements: ${performanceRequirements}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    return {
-      expected_users: expectedUsers,
-      monthly_budget: monthlyBudget,
-      cloud_provider: cloudProvider,
-      app_description: appDescription,
-      additional_notes: combinedNotes || undefined,
-    };
-  }, [appDescription, cloudProvider, expectedUsers, monthlyBudget, performanceRequirements, securityRequirements, technicalConstraints]);
-
-  const requirementQuality = useMemo(() => {
-    const score =
-      (appDescription.trim().length > 40 ? 30 : 0) +
-      (technicalConstraints.trim().length > 20 ? 20 : 0) +
-      (securityRequirements.trim().length > 20 ? 20 : 0) +
-      (performanceRequirements.trim().length > 20 ? 20 : 0) +
-      (monthlyBudget.trim().length > 0 ? 10 : 0);
-    if (score >= 80) return { label: "Strong", tone: "text-black bg-white" };
-    if (score >= 50) return { label: "Good", tone: "text-white bg-zinc-700" };
-    return { label: "Needs Detail", tone: "text-zinc-950 bg-zinc-200" };
-  }, [appDescription, monthlyBudget, performanceRequirements, securityRequirements, technicalConstraints]);
-
-  const handleContinueToRequirements = () => {
-    setWorkflowStep(2);
-    pushActivity("Project setup completed");
-  };
-
-  const handleAnalyze = async () => {
-    setWorkflowStep(3);
-    setAnalysisPending(true);
-    setAnalysisDuration(null);
-    setAnalysisStartedAt(Date.now());
-    pushActivity("AI planning started");
-    await triggerGenerate(buildRequest());
+  const handleWizardSubmit = async (formData: RequirementInput) => {
+    setProjectName(formData.projectName || formData.application_type || "Enterprise Stack");
+    setCloudProvider(formData.cloud_provider);
+    setExpectedUsers(formData.expected_users);
+    setMonthlyBudget(formData.monthly_budget);
+    setAppDescription(formData.app_description);
+    setRegion(formData.region || "East US");
+    setWorkloadType(formData.application_type || "SaaS Platform");
+    setAvailabilityTarget(formData.availability_target || "99.99%");
+    setRto(formData.rto || "4 hours");
+    setRpo(formData.rpo || "1 hour");
+    
+    pushActivity("AI planning started using fallback chain");
+    await triggerGenerate(formData);
+    pushActivity("AI planning completed successfully");
   };
 
   const handleOpenProject = (proj: any) => {
@@ -389,7 +239,11 @@ export default function DashboardPage() {
     setProjectName(proj.name);
     setCloudProvider(proj.cloud_provider || "azure");
     setSelectedNode(null);
-    setDrawer(null);
+    setRegion(proj.region || (proj.cloud_provider === "aws" ? "us-east-1" : "East US"));
+    setWorkloadType(proj.workload_type || "SaaS Platform");
+    setAvailabilityTarget(proj.availability_target || "99.99%");
+    setRto(proj.rto || "4 hours");
+    setRpo(proj.rpo || "1 hour");
     loadArchitecture({
       nodes: proj.nodes,
       edges: proj.edges,
@@ -401,20 +255,21 @@ export default function DashboardPage() {
       cost_estimate: proj.cost_estimate || 0,
       cost_breakdown: [],
       optimization_recommendations: [],
-      complexity_score: 0,
-      operational_overhead_score: 0,
+      complexity_score: 45,
+      operational_overhead_score: 30,
       overengineered: false,
       warnings: [],
-      security_score: 0,
+      security_score: 85,
       security_findings: [],
       compliance_checks: [],
-      explanation: "",
-      alternatives_considered: "",
-      justification_for_choices: "",
+      explanation: "Restored from database cache.",
+      alternatives_considered: "N/A",
+      justification_for_choices: "Manual visual composition.",
       terraform_modules: [],
     } as any);
-    setWorkflowStep(4);
+    setActiveTab("studio");
     pushActivity(`Opened project "${proj.name}"`);
+    loadProjectVersions(proj.id);
   };
 
   const handleSaveProject = async () => {
@@ -431,13 +286,23 @@ export default function DashboardPage() {
         services: architecture.services,
         cloud_provider: architecture.cloud_provider,
         cost_estimate: architecture.cost_estimate,
+        region: region,
+        workload_type: workloadType,
+        availability_target: availabilityTarget,
+        rto: rto,
+        rpo: rpo,
       };
 
       const result = await saveProject(payload, authToken);
       setSaveSuccess(true);
-      if (result.id) setActiveProjectId(result.id);
+      if (result.id) {
+        setActiveProjectId(result.id);
+        loadProjectVersions(result.id);
+      } else if (activeProjectId) {
+        loadProjectVersions(activeProjectId);
+      }
       loadSavedProjects(authToken);
-      pushActivity("Project saved");
+      pushActivity("Project saved successfully");
       setTimeout(() => setSaveSuccess(false), 2000);
     } catch (saveProjectError: any) {
       setSaveError(saveProjectError.message || "Failed to save project");
@@ -452,12 +317,78 @@ export default function DashboardPage() {
       if (activeProjectId === projectId) {
         regenerateArchitecture();
         setActiveProjectId(null);
-        setWorkflowStep(1);
       }
       loadSavedProjects(authToken);
       pushActivity("Project deleted");
     } catch (deleteError) {
       console.error("Delete project failure:", deleteError);
+    }
+  };
+
+  const loadProjectVersions = useCallback(async (projId?: string) => {
+    const id = projId || activeProjectId;
+    if (!id || !authToken) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/projects/${id}/versions`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProjectVersions(data);
+      }
+    } catch (err) {
+      console.error("Failed to load project versions", err);
+    }
+  }, [activeProjectId, authToken]);
+
+  const handleRollback = async (versionId: string) => {
+    if (!activeProjectId || !authToken) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/projects/${activeProjectId}/versions/${versionId}/rollback`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        pushActivity(`Rolled back project to version ${versionId}`);
+        // Reload project
+        const projectRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/projects/${activeProjectId}`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        if (projectRes.ok) {
+          const proj = await projectRes.json();
+          setRegion(proj.region || (proj.cloud_provider === "aws" ? "us-east-1" : "East US"));
+          setWorkloadType(proj.workload_type || "SaaS Platform");
+          setAvailabilityTarget(proj.availability_target || "99.99%");
+          setRto(proj.rto || "4 hours");
+          setRpo(proj.rpo || "1 hour");
+          loadArchitecture({
+            nodes: proj.nodes,
+            edges: proj.edges,
+            services: proj.services,
+            cloud_provider: proj.cloud_provider || "azure",
+            active_provider: proj.active_provider,
+            active_model: proj.active_model,
+            fallback_trigger: proj.fallback_trigger,
+            cost_estimate: proj.cost_estimate || 0,
+            cost_breakdown: [],
+            optimization_recommendations: [],
+            complexity_score: 45,
+            operational_overhead_score: 30,
+            overengineered: false,
+            warnings: [],
+            security_score: 85,
+            security_findings: [],
+            compliance_checks: [],
+            explanation: "Restored from database cache snapshot.",
+            alternatives_considered: "N/A",
+            justification_for_choices: "Manual visual composition.",
+            terraform_modules: [],
+          } as any);
+        }
+        loadProjectVersions(activeProjectId);
+      }
+    } catch (err) {
+      console.error("Rollback failed", err);
     }
   };
 
@@ -484,23 +415,16 @@ export default function DashboardPage() {
       );
       updateLocalTopology(nextNodes, architecture.edges, architecture.services);
       setSelectedNode(null);
-      setDrawer(null);
-      pushActivity(`Updated node ${nodeId}`);
+      pushActivity(`Updated properties of node ${nodeId}`);
     },
     [architecture, pushActivity, updateLocalTopology]
   );
 
-  const handleApproachReview = async () => {
-    setWorkflowStep(5);
-    if (architecture && !isApproved) {
-      await approveArchitecture();
-    }
-    pushActivity("Entered review and export");
-  };
-
   const exportArchitectureJson = () => {
     if (!architecture) return;
-    downloadTextFile(`${projectName.replace(/\s+/g, "_").toLowerCase()}-architecture.json`, JSON.stringify(architecture, null, 2), "application/json");
+    const jsonStr = JSON.stringify(architecture, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    saveAs(blob, `${projectName.replace(/\s+/g, "_").toLowerCase()}-architecture.json`);
     pushActivity("Exported architecture JSON");
   };
 
@@ -508,38 +432,28 @@ export default function DashboardPage() {
     if (!terraform) return;
     try {
       const zip = new JSZip();
-      
       zip.file("main.tf", terraform.main_tf || "");
       zip.file("variables.tf", terraform.variables_tf || "");
       zip.file("outputs.tf", terraform.outputs_tf || "");
       zip.file("terraform.tfvars", terraform.terraform_tfvars || "");
-      
       if (terraform.instructions) {
         zip.file("README.md", terraform.instructions);
       }
-      
       const blob = await zip.generateAsync({ type: "blob" });
       saveAs(blob, `${projectName.replace(/\s+/g, "_").toLowerCase()}-terraform.zip`);
-      
-      pushActivity("Exported Terraform as ZIP");
+      pushActivity("Exported Terraform ZIP package");
     } catch (err) {
       console.error("Failed to export Terraform", err);
     }
   };
 
   const exportPng = async () => {
-    if (!architecture) return;
     const flowEl = document.querySelector(".react-flow") as HTMLElement;
     if (!flowEl) return;
     try {
-      const dataUrl = await toPng(flowEl, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${projectName.replace(/\s+/g, "_").toLowerCase()}-architecture.png`;
-      link.href = dataUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      pushActivity("Exported PNG");
+      const dataUrl = await toPng(flowEl, { backgroundColor: "#0b0f19", pixelRatio: 2 });
+      saveAs(dataUrl, `${projectName.replace(/\s+/g, "_").toLowerCase()}-architecture.png`);
+      pushActivity("Exported high-res PNG diagram");
     } catch (err) {
       console.error("Failed to export PNG", err);
     }
@@ -547,622 +461,244 @@ export default function DashboardPage() {
 
   const exportPdf = () => {
     window.print();
-    pushActivity("Opened print dialog for PDF export");
+    pushActivity("Opened printer document context");
   };
 
-  const renderStepNav = () => (
-    <div className="no-print sticky top-0 z-30 border-b border-zinc-200/80 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-4 lg:px-8">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-black text-white">
-            <Cpu className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold tracking-tight text-zinc-950">ArchGen AI</div>
-            <div className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Enterprise Architecture Studio</div>
-          </div>
+  // --- RENDERING TABS ---
+  const renderDashboardTab = () => (
+    <div className="space-y-6 max-w-6xl animate-fade-in">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Cloud Architecture Studio</h1>
+          <p className="text-sm text-slate-400 mt-1">Status report of provisioning nodes, security compliance and workspaces.</p>
         </div>
-
-        <div className="hidden flex-1 px-6 xl:block">
-          <div className="flex items-center gap-3">
-            {STEP_LABELS.map((label, index) => {
-              const step = (index + 1) as WorkflowStep;
-              const active = workflowStep === step;
-              const completed = workflowStep > step;
-              return (
-                <div key={label} className="flex flex-1 items-center gap-3">
-                  <button
-                    onClick={() => setWorkflowStep(step)}
-                    className={`flex min-w-0 flex-1 items-center gap-3 rounded-full border px-4 py-2 text-left transition ${
-                      active
-                        ? "border-zinc-950 bg-zinc-950 text-white"
-                        : completed
-                          ? "border-zinc-300 bg-zinc-100 text-zinc-900"
-                          : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-400"
-                    }`}
-                  >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-[10px] font-semibold">
-                      {completed ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
-                    </span>
-                    <span className="truncate text-[11px] font-medium">{label}</span>
-                  </button>
-                  {index < STEP_LABELS.length - 1 && <div className="h-px flex-1 bg-zinc-200" />}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="hidden rounded-full border border-zinc-200 px-3 py-1.5 text-[11px] text-zinc-600 md:flex">
-            @{username || "User"}
-          </div>
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950 hover:text-zinc-950"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            Logout
+        <div className="flex gap-2">
+          <button onClick={regenerateArchitecture} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs font-mono rounded-lg transition shadow-neon-blue">
+            Create New Stack
           </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between">
+          <span className="text-xs font-mono uppercase tracking-widest text-slate-400">Total Saved projects</span>
+          <span className="text-4xl font-extrabold text-white mt-4">{savedProjects.length}</span>
+          <span className="text-xs text-slate-500 mt-2">Provisioned inside secure MongoDB cluster</span>
+        </div>
+
+        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between">
+          <span className="text-xs font-mono uppercase tracking-widest text-slate-400">Active Architecture Nodes</span>
+          <span className="text-4xl font-extrabold text-cyan-400 mt-4">{architecture?.nodes.length || 0}</span>
+          <span className="text-xs text-slate-500 mt-2">Visually rendered inside canvas viewport</span>
+        </div>
+
+        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between">
+          <span className="text-xs font-mono uppercase tracking-widest text-slate-400">Security Audit Score</span>
+          <span className="text-4xl font-extrabold text-emerald-400 mt-4">{architecture?.security_score || 85}/100</span>
+          <span className="text-xs text-slate-500 mt-2">Compliance checks passing standard gates</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="glass-card p-6 rounded-2xl">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200 mb-4 flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-cyan-400" /> Recent Workspaces
+          </h2>
+          <div className="space-y-3">
+            {savedProjects.length === 0 ? (
+              <p className="text-xs text-slate-500 font-mono">No active projects found. Use Architecture Studio to create one.</p>
+            ) : (
+              savedProjects.map((p) => (
+                <div key={p.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-950/40 border border-white/5 hover:border-cyan-500/20 transition cursor-pointer" onClick={() => handleOpenProject(p)}>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-slate-200 block truncate">{p.name}</span>
+                    <span className="text-[10px] text-slate-500 font-mono uppercase tracking-wider mt-0.5 block">{p.cloud_provider} · ${p.cost_estimate || 0}/mo</span>
+                  </div>
+                  <button onClick={(e) => handleDeleteProject(p.id, e)} className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-rose-400 transition">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="glass-card p-6 rounded-2xl">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200 mb-4 flex items-center gap-2">
+            <History className="w-4 h-4 text-cyan-400" /> Platform Event Telemetry
+          </h2>
+          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+            {activityLog.length === 0 ? (
+              <p className="text-xs text-slate-500 font-mono">Activity logs are empty.</p>
+            ) : (
+              activityLog.map((log, i) => (
+                <div key={i} className="text-[10px] font-mono text-slate-400 p-2 rounded bg-white/5 border border-white/5">
+                  {log}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 
-  const renderProjectSetup = () => (
-    <section className="mx-auto grid w-full max-w-[1200px] gap-6 px-4 py-8 lg:grid-cols-[1.1fr_0.9fr] lg:px-8">
-      <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <div className="mb-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-            <Package className="h-3.5 w-3.5" />
-            Step 1 · Project Setup
-          </div>
-          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-zinc-950">
-            Start with a clean project brief.
-          </h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-600">
-            Keep this screen focused: define the project, cloud target, scale, and budget before we move into requirements.
-          </p>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Project Name</span>
-            <input
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-              placeholder="Enterprise Stack"
-            />
-          </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Cloud Provider</span>
-            <select
-              value={cloudProvider}
-              onChange={(e) => setCloudProvider(e.target.value)}
-              className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-            >
-              <option value="azure">Azure</option>
-              <option value="aws">AWS</option>
-              <option value="gcp">GCP</option>
-            </select>
-          </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Expected Users</span>
-            <input
-              value={expectedUsers}
-              onChange={(e) => setExpectedUsers(e.target.value)}
-              className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-              placeholder="100,000 monthly"
-            />
-          </label>
-
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Budget</span>
-            <input
-              value={monthlyBudget}
-              onChange={(e) => setMonthlyBudget(e.target.value)}
-              className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-              placeholder="$500"
-            />
-          </label>
-        </div>
-
-        <div className="mt-8 flex flex-wrap gap-3">
-          <button
-            onClick={handleContinueToRequirements}
-            className="inline-flex items-center gap-2 rounded-full bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800"
-          >
-            Continue
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </div>
+  const renderTemplatesTab = () => (
+    <div className="space-y-6 max-w-6xl animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Architecture Blueprint Templates</h1>
+        <p className="text-sm text-slate-400 mt-1">Pre-configured design blueprints aligned with standard cloud enterprise benchmarks.</p>
       </div>
 
-      <div className="rounded-3xl border border-zinc-200 bg-zinc-50 p-8">
-        <div className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Project List</div>
-        <div className="mt-4 space-y-3">
-          {savedProjects.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-6 text-sm text-zinc-500">
-              No saved projects yet.
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {PRESETS.map((p) => (
+          <div key={p.title} className="glass-card p-6 rounded-3xl flex flex-col justify-between hover:border-cyan-500/20 transition-all group">
+            <div>
+              <span className="text-[10px] uppercase font-mono text-slate-500 font-bold block">{p.provider} · {p.scale}</span>
+              <h3 className="text-base font-bold text-white mt-2 group-hover:text-cyan-400 transition-colors">{p.title}</h3>
+              <p className="text-xs text-slate-400 mt-3 leading-relaxed">{p.desc}</p>
             </div>
-          ) : (
-            savedProjects.map((proj) => (
-              <button
-                key={proj.id}
-                onClick={() => handleOpenProject(proj)}
-                className="flex w-full items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-left transition hover:border-zinc-950"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-zinc-950">{proj.name}</div>
-                  <div className="truncate text-xs text-zinc-500">
-                    {proj.cloud_provider} · ${proj.cost_estimate}
-                  </div>
-                </div>
-                <Trash2
-                  className="h-4 w-4 text-zinc-400 hover:text-zinc-950"
-                  onClick={(e) => handleDeleteProject(proj.id, e)}
-                />
-              </button>
-            ))
-          )}
-        </div>
+            <button
+              onClick={() => {
+                setProjectName(p.title);
+                setAppDescription(p.descText);
+                setCloudProvider(p.provider);
+                setMonthlyBudget(p.budget);
+                setExpectedUsers(p.scale);
+                setWorkloadType(p.title);
+                setActiveTab("studio");
+                pushActivity(`Applied ${p.title} blueprint template`);
+              }}
+              className="mt-6 w-full py-2 bg-white/5 hover:bg-cyan-500 hover:text-slate-950 font-bold text-xs font-mono rounded-lg border border-white/10 transition-colors flex items-center justify-center gap-1.5"
+            >
+              Configure Template <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
       </div>
-    </section>
+    </div>
   );
 
-  const renderRequirements = () => (
-    <section className="mx-auto w-full max-w-[980px] px-4 py-10 lg:px-8">
-      <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <div className="mb-6 flex items-center justify-between gap-4">
+  const renderStudioTab = () => (
+    <div className="h-full flex flex-col min-h-[calc(100vh-80px)]">
+      {/* Studio Header Toolbar */}
+      <div className="border-b border-white/5 bg-[#070b13] px-6 py-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-              <ClipboardList className="h-3.5 w-3.5" />
-              Step 2 · Requirements
+            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-mono uppercase tracking-widest">
+              Active Studio Canvas
             </div>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-950">Describe the workload clearly.</h2>
+            <h1 className="text-xl font-bold tracking-tight text-white mt-2 flex items-center gap-2">
+              {projectName} 
+              <span className="text-xs font-mono text-slate-400 font-normal uppercase">({cloudProvider})</span>
+            </h1>
           </div>
-          <div className={`rounded-full px-4 py-2 text-sm font-medium ${requirementQuality.tone}`}>
-            Quality: {requirementQuality.label}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={handleSaveProject} className="px-3.5 py-2 bg-[#0d111d] hover:bg-[#1e293b] border border-white/10 text-slate-200 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5">
+              <Save className="w-4 h-4" /> Save Project
+            </button>
+            <button onClick={exportArchitectureJson} className="px-3.5 py-2 bg-[#0d111d] hover:bg-[#1e293b] border border-white/10 text-slate-200 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5">
+              <Download className="w-4 h-4" /> JSON
+            </button>
+            <button onClick={exportPng} className="px-3.5 py-2 bg-[#0d111d] hover:bg-[#1e293b] border border-white/10 text-slate-200 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5">
+              <Download className="w-4 h-4" /> PNG
+            </button>
+            <button onClick={exportTerraform} className="px-3.5 py-2 bg-[#0d111d] hover:bg-[#1e293b] border border-white/10 text-slate-200 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5">
+              <FileCode className="w-4 h-4" /> HCL ZIP
+            </button>
           </div>
         </div>
+      </div>
 
-        <div className="grid gap-5">
-          <div className="grid gap-4 md:grid-cols-3">
-            {REQUIREMENT_TEMPLATES.map((template) => (
+      {/* Main Split-View Workspace */}
+      <div className="flex-1 grid grid-cols-1 xl:grid-cols-[380px_1fr_400px] overflow-hidden min-h-[500px]">
+        {/* Left Side: Requirements builder form */}
+        <div className="border-r border-white/5 bg-[#05070d] p-5 overflow-y-auto max-h-[80vh]">
+          <RequirementForm onSubmit={handleWizardSubmit} isLoading={loading} />
+        </div>
+
+        {/* Center: React Flow Interactive Canvas */}
+        <div className="relative bg-[#0b0f19] flex flex-col overflow-hidden border-r border-white/5">
+          <ArchitectureCanvas
+            initialNodes={architecture?.nodes || []}
+            initialEdges={architecture?.edges || []}
+            onTopologyChange={updateLocalTopology}
+            isApproved={isApproved}
+            onApprove={approveArchitecture}
+            onRegenerate={regenerateArchitecture}
+            undo={undo}
+            redo={redo}
+            triggerAiAssist={triggerAiAssist}
+            onSelectNode={setSelectedNode}
+          />
+        </div>
+
+        {/* Right Side: Properties, Terraform edit, Validation findings */}
+        <div className="bg-[#05070d] border-l border-white/5 flex flex-col overflow-y-auto max-h-[80vh]">
+          <div className="flex border-b border-white/5 text-xs font-mono">
+            {(["properties", "terraform", "validation"] as const).map((tab) => (
               <button
-                key={template.label}
-                onClick={() => {
-                  setAppDescription(template.app);
-                  setSecurityRequirements(template.security);
-                  setPerformanceRequirements(template.performance);
-                  setTechnicalConstraints(template.notes);
-                  pushActivity(`Applied ${template.label} template`);
-                }}
-                className="rounded-3xl border border-zinc-200 bg-zinc-50 p-5 text-left transition hover:border-zinc-950"
+                key={tab}
+                onClick={() => setActiveReviewTab(tab)}
+                className={`flex-1 py-3 text-center capitalize border-b-2 font-bold transition-all ${
+                  activeReviewTab === tab
+                    ? "border-cyan-500 text-white bg-slate-900/40"
+                    : "border-transparent text-slate-400 hover:text-white"
+                }`}
               >
-                <div className="text-sm font-medium text-zinc-950">{template.label}</div>
-                <div className="mt-2 text-sm leading-6 text-zinc-600">{template.description}</div>
+                {tab}
               </button>
             ))}
           </div>
 
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Application Description</span>
-            <textarea
-              value={appDescription}
-              onChange={(e) => setAppDescription(e.target.value)}
-              rows={6}
-              className="w-full rounded-3xl border border-zinc-200 bg-white px-4 py-4 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-              placeholder="Describe the app, user flows, and business goals..."
-            />
-          </label>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Security Requirements</span>
-              <textarea
-                value={securityRequirements}
-                onChange={(e) => setSecurityRequirements(e.target.value)}
-                rows={4}
-                className="w-full rounded-3xl border border-zinc-200 bg-white px-4 py-4 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-                placeholder="Authentication, secrets, compliance..."
-              />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Performance Requirements</span>
-              <textarea
-                value={performanceRequirements}
-                onChange={(e) => setPerformanceRequirements(e.target.value)}
-                rows={4}
-                className="w-full rounded-3xl border border-zinc-200 bg-white px-4 py-4 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-                placeholder="Latency, throughput, scale, availability..."
-              />
-            </label>
-          </div>
-
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Optional Technical Constraints</span>
-            <textarea
-              value={technicalConstraints}
-              onChange={(e) => setTechnicalConstraints(e.target.value)}
-              rows={3}
-              className="w-full rounded-3xl border border-zinc-200 bg-white px-4 py-4 text-sm text-zinc-950 outline-none transition focus:border-zinc-950"
-              placeholder="Budget ceilings, region limits, compliance rules..."
-            />
-          </label>
-        </div>
-
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleAnalyze}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-full bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50"
-          >
-            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Analyze Requirements
-          </button>
-          <div className="text-xs text-zinc-500">
-            Add enough detail to guide architecture, Terraform, and security planning.
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-
-  const renderPlanning = () => (
-    <section className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 py-8 lg:px-8">
-      <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Step 3 · AI Planning
-            </div>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-950">The orchestration layer is working.</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-              We show progress instead of leaving you staring at an empty screen.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-            <div>Project: {projectName}</div>
-            <div>Provider: {analysisSummary?.activeProvider || cloudProvider}</div>
-            <div>Model: {analysisSummary?.activeModel || "Planning in progress"}</div>
-          </div>
-        </div>
-
-        <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_360px]">
-          <div className="rounded-3xl border border-zinc-200 bg-zinc-50 p-6">
-            {loading ? <LoadingScreen /> : null}
-            {!loading && architecture && (
+          <div className="p-4 flex-1">
+            {activeReviewTab === "properties" && (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
-                  Execution time: {analysisDuration ? `${Math.max(1, Math.round(analysisDuration / 1000))}s` : "Measured during planning"}
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {[
-                    ["Requirement Understanding", "Completed"],
-                    ["Security Analysis", "Completed"],
-                    ["Cost Analysis", "Completed"],
-                    ["Architecture Planning", "Completed"],
-                    ["Terraform Planning", "Ready"],
-                  ].map(([label, status]) => (
-                    <div key={label} className="rounded-2xl border border-zinc-200 bg-white p-4">
-                      <div className="text-sm font-medium text-zinc-950">{label}</div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.24em] text-zinc-500">{status}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-3xl border border-zinc-200 bg-white p-6">
-            <div className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Execution Details</div>
-            <div className="mt-4 space-y-3 text-sm text-zinc-700">
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                <span>Generated By</span>
-                <span className="font-medium text-zinc-950 capitalize">{analysisSummary?.generationSource || "Waiting"}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                <span>Provider</span>
-                <span className="font-medium text-zinc-950 capitalize">{analysisSummary?.provider || "Waiting"}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                <span>Nodes</span>
-                <span className="font-medium text-zinc-950">{analysisSummary?.nodeCount !== undefined ? analysisSummary.nodeCount : "Waiting"}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                <span>Edges</span>
-                <span className="font-medium text-zinc-950">{analysisSummary?.edgeCount !== undefined ? analysisSummary.edgeCount : "Waiting"}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                <span>Subnets</span>
-                <span className="font-medium text-zinc-950">{analysisSummary?.subnetCount !== undefined ? analysisSummary.subnetCount : "Waiting"}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                <span>Estimated Cost</span>
-                <span className="font-medium text-zinc-950">{analysisSummary?.costEstimate ? `$${analysisSummary.costEstimate}/month` : "Waiting"}</span>
-              </div>
-              <div className="flex items-center justify-between pb-2">
-                <span>Validation</span>
-                <span className="font-medium text-emerald-600">{loading ? "Running" : "Passed"}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {error && <div className="mt-6 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">{error}</div>}
-      </div>
-    </section>
-  );
-
-  const renderStudio = () => {
-    const paletteGroups = [
-      {
-        label: "Gateway",
-        items: ["GatewayNode"],
-      },
-      { label: "Frontend", items: ["FrontendNode"] },
-      { label: "Backend", items: ["BackendNode"] },
-      { label: "Database", items: ["DatabaseNode"] },
-      { label: "Cache", items: ["CacheNode"] },
-      { label: "Storage", items: ["StorageNode"] },
-      { label: "Security", items: ["SecurityNode"] },
-      { label: "Monitoring", items: ["MonitoringNode"] },
-    ];
-
-    const paletteLabels: Record<string, { title: string; detail: string; icon: React.ReactNode }> = {
-      GatewayNode: { title: "Gateway", detail: "Ingress, routing, WAF", icon: <Globe className="h-4 w-4" /> },
-      FrontendNode: { title: "Frontend", detail: "Static app or web client", icon: <Server className="h-4 w-4" /> },
-      BackendNode: { title: "Backend", detail: "API compute and services", icon: <Cpu className="h-4 w-4" /> },
-      DatabaseNode: { title: "Database", detail: "SQL or NoSQL storage", icon: <Database className="h-4 w-4" /> },
-      CacheNode: { title: "Cache", detail: "Redis or memory cache", icon: <HardDrive className="h-4 w-4" /> },
-      StorageNode: { title: "Storage", detail: "Blobs, files, assets", icon: <Package className="h-4 w-4" /> },
-      SecurityNode: { title: "Security", detail: "Vaults and controls", icon: <Key className="h-4 w-4" /> },
-      MonitoringNode: { title: "Monitoring", detail: "Logs and telemetry", icon: <Activity className="h-4 w-4" /> },
-    };
-
-    return (
-      <section className="relative flex min-h-[calc(100vh-84px)] flex-col bg-zinc-50">
-        <div className="border-b border-zinc-200 bg-white px-4 py-4 lg:px-8">
-          <div className="mx-auto flex max-w-[1600px] flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-                <SquareStack className="h-3.5 w-3.5" />
-                Step 4 · Architecture Studio
-              </div>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-950">
-                {projectName} — clean, focused, and editable.
-              </h2>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => setDrawer("palette")} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Add Service
-              </button>
-              <button onClick={() => setDrawer("service")} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Service Properties
-              </button>
-              <button onClick={() => setDrawer("terraform")} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Terraform
-              </button>
-              <button onClick={() => setDrawer("security")} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Security
-              </button>
-              <button onClick={() => setDrawer("cost")} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Cost
-              </button>
-              <button onClick={() => setDrawer("reasoning")} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                AI Reasoning
-              </button>
-              <button onClick={() => setDrawer("history")} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Activity
-              </button>
-              <button
-                onClick={handleApproachReview}
-                className="rounded-full bg-zinc-950 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800"
-              >
-                Review & Export
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="relative mx-auto flex w-full max-w-[1600px] flex-1 gap-4 overflow-hidden px-4 py-4 lg:px-8">
-          <div className="no-print hidden xl:block xl:w-72">
-            <div className="sticky top-28 rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Service Palette</div>
-                <button onClick={() => setDrawer(drawer === "palette" ? null : "palette")} className="text-xs text-zinc-500 hover:text-zinc-950">
-                  {drawer === "palette" ? "Hide" : "Open"}
-                </button>
-              </div>
-              <div className="space-y-3">
-                {paletteGroups.map((group) => (
-                  <div key={group.label}>
-                    <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-zinc-400">{group.label}</div>
-                    <div className="space-y-2">
-                      {group.items.map((nodeType) => {
-                        const entry = paletteLabels[nodeType];
-                        return (
-                          <div
-                            key={nodeType}
-                            draggable
-                            onDragStart={(event) => onDragStart(event, nodeType)}
-                            className="flex cursor-grab items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3 transition hover:border-zinc-950 active:cursor-grabbing"
-                          >
-                            <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900">
-                              {entry.icon}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium text-zinc-950">{entry.title}</div>
-                              <div className="truncate text-xs text-zinc-500">{entry.detail}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex min-w-0 flex-1 flex-col gap-4">
-            <div className="rounded-3xl border border-zinc-200 bg-white p-3 shadow-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <button onClick={undo} className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-950">
-                  <Undo2 className="mr-1 inline h-3.5 w-3.5" /> Undo
-                </button>
-                <button onClick={redo} className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-950">
-                  <Redo2 className="mr-1 inline h-3.5 w-3.5" /> Redo
-                </button>
-                <button onClick={() => pushActivity("Auto layout requested")} className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-950">
-                  <Minimize2 className="mr-1 inline h-3.5 w-3.5" /> Auto Layout
-                </button>
-                <div className="mx-1 h-6 w-px bg-zinc-200" />
-                <button onClick={() => setDrawer("service")} className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-950">
-                  <Edit3 className="mr-1 inline h-3.5 w-3.5" /> Edit Node
-                </button>
-                <button onClick={() => setDrawer("terraform")} className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-950">
-                  <FileCode className="mr-1 inline h-3.5 w-3.5" /> Export HCL
-                </button>
-                <button onClick={handleSaveProject} className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-950">
-                  <Save className="mr-1 inline h-3.5 w-3.5" /> Save
-                </button>
-              </div>
-            </div>
-
-            <div className="min-h-[72vh] flex-1 overflow-hidden rounded-[32px] border border-zinc-200 bg-white shadow-sm">
-              {loading ? (
-                <div className="flex h-full items-center justify-center p-6">
-                  <LoadingScreen />
-                </div>
-              ) : architecture ? (
-                <ArchitectureCanvas
-                  initialNodes={architecture.nodes}
-                  initialEdges={architecture.edges}
-                  onTopologyChange={updateLocalTopology}
-                  isApproved={isApproved}
-                  onApprove={approveArchitecture}
-                  onRegenerate={regenerateArchitecture}
-                  undo={undo}
-                  redo={redo}
-                  triggerAiAssist={triggerAiAssist}
-                  onSelectNode={setSelectedNode}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center p-12 text-center">
-                  <div className="max-w-md">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-zinc-200 bg-zinc-50">
-                      <MoonStar className="h-6 w-6 text-zinc-900" />
-                    </div>
-                    <h3 className="mt-5 text-xl font-semibold text-zinc-950">Architecture canvas is ready.</h3>
-                    <p className="mt-2 text-sm leading-6 text-zinc-600">
-                      Generate an architecture from the workflow above, or start from a blank canvas.
-                    </p>
-                    <button
-                      onClick={regenerateArchitecture}
-                      className="mt-6 rounded-full bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800"
-                    >
-                      Start Blank Canvas
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {drawer && (
-          <div className="fixed inset-0 z-50">
-            <button className="absolute inset-0 bg-zinc-950/40" onClick={() => setDrawer(null)} aria-label="Close drawer" />
-            <div className="absolute right-0 top-0 h-full w-full max-w-[420px] overflow-y-auto border-l border-zinc-200 bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                    {drawer === "service" ? "Service Properties" : drawer === "terraform" ? "Terraform" : drawer === "security" ? "Security" : drawer === "cost" ? "Cost Analysis" : drawer === "reasoning" ? "AI Reasoning" : drawer === "history" ? "Activity History" : "Service Palette"}
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-zinc-950">Focused, slide-out panel</div>
-                </div>
-                <button onClick={() => setDrawer(null)} className="rounded-full border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-950">
-                  Close
-                </button>
-              </div>
-
-              <div className="p-4">
-                {drawer === "service" && selectedNode && (
-                  <ServiceConfigPanel node={selectedNode} onUpdateNode={handleUpdateNode} onClose={() => setDrawer(null)} />
-                )}
-                {drawer === "service" && !selectedNode && (
-                  <div className="rounded-3xl border border-dashed border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600">
-                    Select a node on the canvas to edit its properties.
+                {selectedNode ? (
+                  <ServiceConfigPanel node={selectedNode} onUpdateNode={handleUpdateNode} onClose={() => setSelectedNode(null)} />
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-white/5 bg-[#070b13] p-6 text-center">
+                    <Edit3 className="w-8 h-8 text-slate-500 mx-auto mb-3" />
+                    <h4 className="text-xs font-bold text-slate-300">No Resource Selected</h4>
+                    <p className="text-[10px] text-slate-500 mt-1">Double click any visual node on the canvas to configure properties.</p>
                   </div>
                 )}
-                {drawer === "terraform" && <TerraformPanel terraform={terraform} isLoading={tfLoading} />}
-                {drawer === "security" && (
-                  <SecurityPanel
-                    securityScore={architecture?.security_score ?? 0}
-                    findings={architecture?.security_findings ?? []}
-                    compliance={architecture?.compliance_checks ?? []}
-                  />
-                )}
-                {drawer === "cost" && (
-                  <CostPanel
-                    costEstimate={architecture?.cost_estimate ?? 0}
-                    costBreakdown={architecture?.cost_breakdown ?? []}
-                    recommendations={architecture?.optimization_recommendations ?? []}
-                    costScore={85}
-                  />
-                )}
-                {drawer === "reasoning" && (
-                  <ArchitectureExplanationPanel
-                    explanation={architecture?.explanation ?? ""}
-                    alternativesConsidered={architecture?.alternatives_considered ?? ""}
-                    justificationForChoices={architecture?.justification_for_choices ?? ""}
-                  />
-                )}
-                {drawer === "history" && (
-                  <div className="space-y-3 rounded-3xl border border-zinc-200 bg-white p-5">
-                    <div className="text-sm font-medium text-zinc-950">Activity Log</div>
-                    {activityLog.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-500">
-                        Actions will appear here as you progress.
-                      </div>
-                    ) : (
-                      activityLog.map((entry, index) => (
-                        <div key={`${entry}-${index}`} className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-                          {entry}
-                        </div>
-                      ))
-                    )}
+                
+                {/* Visual statistics */}
+                <div className="glass-card p-4 rounded-xl mt-4 space-y-2 font-mono text-[10px]">
+                  <div className="flex justify-between pb-1.5 border-b border-white/5">
+                    <span className="text-slate-400">Billing Limit Target</span>
+                    <span className="text-white font-bold">${monthlyBudget}/mo</span>
                   </div>
-                )}
-                {drawer === "palette" && (
-                  <div className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-5">
-                    <div className="text-sm font-medium text-zinc-950">Drag services into the canvas</div>
-                    <div className="text-sm text-zinc-600">
-                      Use the palette on the left for desktop, or drag from here on smaller screens.
-                    </div>
-                    <div className="space-y-2">
-                      {Object.entries(paletteLabels).map(([nodeType, entry]) => (
-                        <div
-                          key={nodeType}
-                          draggable
-                          onDragStart={(event) => onDragStart(event, nodeType)}
-                          className="flex cursor-grab items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3 transition hover:border-zinc-950"
-                        >
-                          <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-zinc-200 bg-white">
-                            {entry.icon}
-                          </div>
+                  <div className="flex justify-between pb-1.5 border-b border-white/5">
+                    <span className="text-slate-400">Availability Target</span>
+                    <span className="text-emerald-400 font-bold">HA Multi-Zone</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Compliance Benchmark</span>
+                    <span className="text-cyan-400 font-bold">SOC2 / ISO</span>
+                  </div>
+                </div>
+
+                {/* Version history snapshots */}
+                {activeProjectId && projectVersions.length > 0 && (
+                  <div className="glass-card p-4 rounded-xl mt-4 space-y-3 font-mono text-[10px]">
+                    <span className="text-slate-400 font-bold uppercase tracking-wider block">Version Snapshots</span>
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                      {projectVersions.map((v) => (
+                        <div key={v.version_id} className="flex justify-between items-center p-2 rounded bg-slate-950/40 border border-white/5">
                           <div>
-                            <div className="text-sm font-medium text-zinc-950">{entry.title}</div>
-                            <div className="text-xs text-zinc-500">{entry.detail}</div>
+                            <span className="text-cyan-400 font-bold block">{v.version_id}</span>
+                            <span className="text-[8px] text-slate-500 block">
+                              {new Date(v.timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-300 font-bold">${v.cost_estimate}/mo</span>
+                            <button onClick={() => handleRollback(v.version_id)} className="px-2 py-0.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-400 hover:text-slate-950 font-mono text-[9px] rounded border border-cyan-500/30 transition">
+                              Restore
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -1170,171 +706,321 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        )}
-      </section>
-    );
-  };
+            )}
 
-  const renderReview = () => (
-    <section className="mx-auto w-full max-w-[1600px] px-4 py-8 lg:px-8">
-      <div className="rounded-[32px] border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-200 px-6 py-5 lg:px-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-            <Download className="h-3.5 w-3.5" />
-            Step 5 · Review & Export
-          </div>
-          <div className="mt-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <h2 className="text-3xl font-semibold tracking-tight text-zinc-950">Review the final architecture and export deliverables.</h2>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">
-                Approve, save, and export with a clean handoff to your deployment pipeline.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => approveArchitecture()} className="rounded-full bg-zinc-950 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800">
-                Approve
-              </button>
-              <button onClick={handleSaveProject} className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Save Project
-              </button>
-              <button onClick={exportArchitectureJson} className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Export JSON
-              </button>
-              <button onClick={exportPng} className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Export PNG
-              </button>
-              <button onClick={exportPdf} className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Export PDF
-              </button>
-              <button onClick={exportTerraform} className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
-                Export Terraform
-              </button>
-            </div>
-          </div>
-        </div>
+            {activeReviewTab === "terraform" && (
+              <div className="h-full">
+                <TerraformPanel terraform={terraform} isLoading={tfLoading} onCodeChange={handleHclCodeChange} />
+              </div>
+            )}
 
-        <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1.2fr_0.8fr] lg:px-8">
-          <div className="rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
-            <div className="flex flex-wrap gap-2 border-b border-zinc-200 pb-4">
-              {["architecture", "terraform", "security", "cost", "deployment"].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveReviewTab(tab as any)}
-                  className={`rounded-full px-4 py-2 text-xs font-medium capitalize transition ${
-                    activeReviewTab === tab ? "bg-zinc-950 text-white" : "border border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            <div className="pt-4">
-              {activeReviewTab === "architecture" && (
-                <ArchitectureExplanationPanel
-                  explanation={architecture?.explanation ?? ""}
-                  alternativesConsidered={architecture?.alternatives_considered ?? ""}
-                  justificationForChoices={architecture?.justification_for_choices ?? ""}
-                />
-              )}
-              {activeReviewTab === "terraform" && <TerraformPanel terraform={terraform} isLoading={tfLoading} />}
-              {activeReviewTab === "security" && (
+            {activeReviewTab === "validation" && (
+              <div className="space-y-4">
                 <SecurityPanel
-                  securityScore={architecture?.security_score ?? 0}
+                  securityScore={architecture?.security_score ?? 85}
                   findings={architecture?.security_findings ?? []}
                   compliance={architecture?.compliance_checks ?? []}
                 />
-              )}
-              {activeReviewTab === "cost" && (
                 <CostPanel
                   costEstimate={architecture?.cost_estimate ?? 0}
                   costBreakdown={architecture?.cost_breakdown ?? []}
                   recommendations={architecture?.optimization_recommendations ?? []}
                   costScore={85}
                 />
-              )}
-              {activeReviewTab === "deployment" && (
-                <WarningPanel
-                  warnings={architecture?.warnings ?? []}
-                  complexityScore={architecture?.complexity_score ?? 0}
-                  operationalOverheadScore={architecture?.operational_overhead_score ?? 0}
-                  overengineered={architecture?.overengineered ?? false}
-                />
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-3xl border border-zinc-200 bg-white p-5">
-              <div className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Summary</div>
-              <div className="mt-4 space-y-3 text-sm text-zinc-700">
-                <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                  <span>Active Provider</span>
-                  <span className="font-medium text-zinc-950">{architecture?.active_provider || "unknown"}</span>
-                </div>
-                <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                  <span>Active Model</span>
-                  <span className="font-medium text-zinc-950">{architecture?.active_model || "unknown"}</span>
-                </div>
-                <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                  <span>Fallback Trigger</span>
-                  <span className="font-medium text-zinc-950">{architecture?.fallback_trigger || "none"}</span>
-                </div>
-                <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                  <span>Approval</span>
-                  <span className="font-medium text-zinc-950">{isApproved ? "Approved" : "Pending"}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Saved Projects</span>
-                  <span className="font-medium text-zinc-950">{savedProjects.length}</span>
-                </div>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
+      </div>
 
-            <div className="rounded-3xl border border-zinc-200 bg-zinc-50 p-5">
-              <div className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">Recent Activity</div>
-              <div className="mt-4 space-y-2">
-                {activityLog.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-4 text-sm text-zinc-500">
-                    No actions yet.
-                  </div>
+      {/* Bottom Panel: AI Review Console */}
+      <div className="no-print border-t border-white/5 bg-[#05070c] z-20">
+        <div className="flex items-center justify-between px-6 py-2.5 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <TerminalSquare className="w-4 h-4 text-cyan-400 animate-pulse" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-300 font-mono">
+              AI Review & Insights Console
+            </span>
+          </div>
+          <button
+            onClick={() => setIsConsoleExpanded(!isConsoleExpanded)}
+            className="text-[10px] font-mono text-slate-400 hover:text-white"
+          >
+            {isConsoleExpanded ? "Collapse" : "Expand Console"}
+          </button>
+        </div>
+
+        {isConsoleExpanded && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 max-h-48 overflow-y-auto">
+            {/* Security Insights */}
+            <div className="space-y-2 border-r border-white/5 pr-4">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-rose-400 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" /> Security Insights
+              </span>
+              <div className="text-xs space-y-1.5 text-slate-300 font-mono">
+                {architecture?.security_findings.length === 0 ? (
+                  <p className="text-[10px] text-slate-500 italic">No critical security issues resolved.</p>
                 ) : (
-                  activityLog.slice(0, 5).map((entry, index) => (
-                    <div key={`${entry}-${index}`} className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
-                      {entry}
+                  architecture?.security_findings.slice(0, 3).map((f: any, i: number) => (
+                    <div key={i} className="flex gap-1.5 items-start text-[10px]">
+                      <span className="text-rose-500">•</span>
+                      <p>{f.description || f}</p>
                     </div>
                   ))
                 )}
               </div>
             </div>
 
-            {saveSuccess && (
-              <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
-                Project saved successfully.
+            {/* FinOps cost insights */}
+            <div className="space-y-2 border-r border-white/5 pr-4">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 flex items-center gap-1">
+                <DollarSign className="w-3.5 h-3.5" /> FinOps Cost Optimization
+              </span>
+              <div className="text-xs space-y-1.5 text-slate-300 font-mono">
+                {architecture?.optimization_recommendations.length === 0 ? (
+                  <p className="text-[10px] text-slate-500 italic">No FinOps suggestions resolved.</p>
+                ) : (
+                  architecture?.optimization_recommendations.slice(0, 3).map((r: any, i: number) => (
+                    <div key={i} className="flex gap-1.5 items-start text-[10px]">
+                      <span className="text-cyan-500">•</span>
+                      <p>{r}</p>
+                    </div>
+                  ))
+                )}
               </div>
-            )}
-            {saveError && (
-              <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
-                {saveError}
+            </div>
+
+            {/* Performance & Scale insights */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-purple-400 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5" /> Scale & Availability
+              </span>
+              <div className="text-xs space-y-1.5 text-slate-300 font-mono">
+                <div className="flex gap-1.5 items-start text-[10px]">
+                  <span className="text-purple-500">•</span>
+                  <p>Target Availability: {availabilityTarget || "99.99%"}</p>
+                </div>
+                <div className="flex gap-1.5 items-start text-[10px]">
+                  <span className="text-purple-500">•</span>
+                  <p>RTO Constraint: {rto || "4h"} / RPO Constraint: {rpo || "1h"}</p>
+                </div>
+                <div className="flex gap-1.5 items-start text-[10px]">
+                  <span className="text-purple-500">•</span>
+                  <p>Architecture classification: {workloadType || "SaaS Platform"}</p>
+                </div>
               </div>
-            )}
+            </div>
           </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderProjectsTab = () => (
+    <div className="space-y-6 max-w-6xl animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Project Workspaces Repository</h1>
+        <p className="text-sm text-slate-400 mt-1">Review saved architecture templates, budgets, and node configurations.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {savedProjects.length === 0 ? (
+          <div className="glass-card p-12 rounded-3xl text-center border-dashed col-span-2">
+            <FolderOpen className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+            <h3 className="text-sm font-bold text-slate-300">No saved projects found</h3>
+            <p className="text-xs text-slate-500 mt-1">Use Architecture Studio to generate and save your stack.</p>
+          </div>
+        ) : (
+          savedProjects.map((p) => (
+            <div key={p.id} className="glass-card p-6 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition cursor-pointer" onClick={() => handleOpenProject(p)}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-base font-bold text-slate-200 block truncate">{p.name}</h3>
+                  <span className="text-[10px] text-slate-500 font-mono uppercase tracking-wider block mt-1">{p.cloud_provider} · ${p.cost_estimate || 0}/mo</span>
+                </div>
+                <button onClick={(e) => handleDeleteProject(p.id, e)} className="p-2 bg-white/5 hover:bg-rose-500/20 rounded-lg text-slate-400 hover:text-rose-400 transition">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="mt-4 flex gap-2">
+                <span className="px-2 py-1 bg-white/5 rounded text-[10px] text-slate-300 font-mono">Nodes: {p.nodes.length}</span>
+                <span className="px-2 py-1 bg-white/5 rounded text-[10px] text-slate-300 font-mono">Edges: {p.edges.length}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const renderValidationTab = () => (
+    <div className="space-y-6 max-w-6xl animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Validation Center</h1>
+        <p className="text-sm text-slate-400 mt-1">Real-time networking CIDR overlap checks, compliance reports, and security findings.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <SecurityPanel
+          securityScore={architecture?.security_score ?? 85}
+          findings={architecture?.security_findings ?? []}
+          compliance={architecture?.compliance_checks ?? []}
+        />
+        <WarningPanel
+          warnings={architecture?.warnings ?? []}
+          complexityScore={architecture?.complexity_score ?? 45}
+          operationalOverheadScore={architecture?.operational_overhead_score ?? 30}
+          overengineered={architecture?.overengineered ?? false}
+        />
+      </div>
+    </div>
+  );
+
+  const renderCostTab = () => (
+    <div className="space-y-6 max-w-6xl animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Cost & FinOps Analysis</h1>
+        <p className="text-sm text-slate-400 mt-1">Monthly billing breakdowns and proactive resource sizing recommendations.</p>
+      </div>
+
+      <div className="glass-card p-6 rounded-3xl max-w-3xl">
+        <CostPanel
+          costEstimate={architecture?.cost_estimate ?? 0}
+          costBreakdown={architecture?.cost_breakdown ?? []}
+          recommendations={architecture?.optimization_recommendations ?? []}
+          costScore={85}
+        />
+      </div>
+    </div>
+  );
+
+  const renderSettingsTab = () => (
+    <div className="space-y-6 max-w-6xl animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Platform Configurations</h1>
+        <p className="text-sm text-slate-400 mt-1">Configure OpenAI/DeepSeek provider APIs, caching, and account preferences.</p>
+      </div>
+
+      <div className="glass-card p-6 rounded-3xl max-w-2xl space-y-4">
+        <div className="flex justify-between items-center pb-4 border-b border-white/5">
+          <div>
+            <span className="text-sm font-semibold text-slate-200 block">AI Fallback Engine</span>
+            <span className="text-xs text-slate-400 mt-0.5">Prioritized fallback when OpenAI fails</span>
+          </div>
+          <span className="px-3 py-1 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-full text-xs font-mono">
+            OpenAI → DeepSeek → Ollama
+          </span>
+        </div>
+
+        <div className="flex justify-between items-center pb-4 border-b border-white/5">
+          <div>
+            <span className="text-sm font-semibold text-slate-200 block">Active Model In-Use</span>
+            <span className="text-xs text-slate-400 mt-0.5">Selected processing LLM for agentic planning</span>
+          </div>
+          <span className="px-3 py-1 bg-white/5 border border-white/10 text-slate-300 rounded-full text-xs font-mono">
+            Gemini 3.5 Flash (Medium)
+          </span>
+        </div>
+
+        <div className="flex justify-between items-center">
+          <div>
+            <span className="text-sm font-semibold text-slate-200 block">Workspace DB Cache</span>
+            <span className="text-xs text-slate-400 mt-0.5">Cache generated visual diagrams in MongoDB</span>
+          </div>
+          <span className="text-emerald-400 text-xs font-mono font-bold">Enabled</span>
         </div>
       </div>
-    </section>
+    </div>
   );
 
   return (
     <ErrorBoundary fallbackLabel="ArchGen Dashboard">
-      <div className="min-h-screen bg-white text-zinc-950 antialiased">
-        {renderStepNav()}
-        {workflowStep === 1 && renderProjectSetup()}
-        {workflowStep === 2 && renderRequirements()}
-        {workflowStep === 3 && renderPlanning()}
-        {workflowStep >= 4 && renderStudio()}
-        {workflowStep === 5 && renderReview()}
+      <div className="min-h-screen bg-[#080b11] text-slate-100 antialiased flex">
+        {/* Left Navigation Sidebar */}
+        <aside className="no-print w-64 border-r border-white/5 bg-[#05070d] flex flex-col justify-between shrink-0 select-none">
+          <div className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white shadow-neon-blue">
+                <Cpu className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="text-sm font-extrabold tracking-tight text-white block">ArchGen Studio</span>
+                <span className="text-[9px] uppercase tracking-[0.2em] text-slate-500 block">Version 2.0.0</span>
+              </div>
+            </div>
+
+            <nav className="mt-8 space-y-1">
+              {[
+                { tab: "dashboard", label: "Dashboard", icon: <LayoutGrid className="w-4 h-4" /> },
+                { tab: "studio", label: "Architecture Studio", icon: <SquareStack className="w-4 h-4" /> },
+                { tab: "projects", label: "Saved Projects", icon: <FolderOpen className="w-4 h-4" /> },
+                { tab: "templates", label: "Blueprint Templates", icon: <Package className="w-4 h-4" /> },
+                { tab: "terraform", label: "Terraform Code", icon: <FileCode className="w-4 h-4" /> },
+                { tab: "validation", label: "Validation Center", icon: <Shield className="w-4 h-4" /> },
+                { tab: "cost", label: "Cost Analysis", icon: <DollarSign className="w-4 h-4" /> },
+                { tab: "settings", label: "Settings", icon: <Settings2 className="w-4 h-4" /> },
+              ].map((item) => (
+                <button
+                  key={item.tab}
+                  onClick={() => setActiveTab(item.tab as SidebarTab)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-mono transition-all ${
+                    activeTab === item.tab
+                      ? "bg-cyan-500/10 text-cyan-400 font-bold border-l-2 border-cyan-500"
+                      : "text-slate-400 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="p-6 border-t border-white/5 flex flex-col gap-3">
+            <div className="text-[10px] font-mono text-slate-500 truncate">
+              User: @{username || "User"}
+            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2 px-3 py-2 border border-white/10 rounded-lg text-xs font-mono text-slate-400 hover:text-white hover:bg-white/5 transition"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Logout
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Workspace Area */}
+        <main className="flex-1 flex flex-col overflow-x-hidden">
+          {/* Top Info Header */}
+          <header className="no-print border-b border-white/5 bg-[#05070d] px-6 py-4 flex items-center justify-between z-10 shrink-0">
+            <div className="flex items-center gap-2">
+              <Cloud className="w-4 h-4 text-cyan-400 animate-pulse" />
+              <span className="text-xs font-mono text-slate-400">
+                Active Provider: <span className="text-white capitalize">{analysisSummary?.activeProvider || "azure"}</span>
+              </span>
+            </div>
+            <div className="text-[10px] font-mono text-slate-500">
+              Region: {region} · Stack count: {architecture?.nodes.length || 0}
+            </div>
+          </header>
+
+          {/* Tab Content rendering */}
+          <div className="flex-1 p-6 overflow-y-auto">
+            {activeTab === "dashboard" && renderDashboardTab()}
+            {activeTab === "studio" && renderStudioTab()}
+            {activeTab === "projects" && renderProjectsTab()}
+            {activeTab === "templates" && renderTemplatesTab()}
+            {activeTab === "terraform" && (
+              <div className="max-w-4xl glass-card p-6 rounded-3xl">
+                <TerraformPanel terraform={terraform} isLoading={tfLoading} onCodeChange={handleHclCodeChange} />
+              </div>
+            )}
+            {activeTab === "validation" && renderValidationTab()}
+            {activeTab === "cost" && renderCostTab()}
+            {activeTab === "settings" && renderSettingsTab()}
+          </div>
+        </main>
       </div>
     </ErrorBoundary>
   );

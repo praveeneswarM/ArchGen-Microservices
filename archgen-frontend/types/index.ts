@@ -4,6 +4,15 @@ export interface RequirementInput {
   cloud_provider: string;
   app_description: string;
   additional_notes?: string;
+  application_type?: string;
+  scalability_preference?: string;
+  security_level?: string;
+  database_type?: string;
+  projectName?: string;
+  region?: string;
+  availability_target?: string;
+  rto?: string;
+  rpo?: string;
 }
 
 export interface NodePosition {
