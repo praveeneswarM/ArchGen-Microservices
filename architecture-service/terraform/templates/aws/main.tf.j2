@@ -12,7 +12,31 @@ resource "aws_vpc" "main" {
   }
 }
 
+{% set ns = namespace(has_subnets=false) %}
+{% for node in nodes %}
+  {% if node.type == 'SubnetGroupNode' %}
+    {% set ns.has_subnets = true %}
+  {% endif %}
+{% endfor %}
+
+{% macro get_subnet_id(node) -%}
+  {%- if node.parentNode -%}
+    {{- node.parentNode | sanitize_id -}}
+  {%- else -%}
+    {%- if node.type == 'GatewayNode' or node.type == 'FrontendNode' -%}
+      {%- if ns.has_subnets -%}subnetingr{%- else -%}subnetingress{%- endif -%}
+    {%- elif node.type == 'DatabaseNode' or node.type == 'CacheNode' -%}
+      subnetdata
+    {%- elif node.type == 'SecurityNode' or node.type == 'MonitoringNode' -%}
+      subnetpe
+    {%- else -%}
+      subnetapp
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
 # Subnets mapped from the visual architecture canvas
+{% if ns.has_subnets %}
 {% for node in nodes %}
 {% if node.type == 'SubnetGroupNode' %}
 {% set safe_id = node.id | sanitize_id %}
@@ -32,6 +56,43 @@ resource "aws_subnet" "{{ safe_id }}" {
 }
 {% endif %}
 {% endfor %}
+{% else %}
+resource "aws_subnet" "subnetingress" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "snet-ingress"
+  }
+}
+
+resource "aws_subnet" "subnetapp" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  map_public_ip_on_launch = false
+  tags = {
+    Name = "snet-app"
+  }
+}
+
+resource "aws_subnet" "subnetdata" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.3.0/24"
+  map_public_ip_on_launch = false
+  tags = {
+    Name = "snet-data"
+  }
+}
+
+resource "aws_subnet" "subnetpe" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.5.0/24"
+  map_public_ip_on_launch = false
+  tags = {
+    Name = "snet-pe"
+  }
+}
+{% endif %}
 
 # Security Group for Ingress
 resource "aws_security_group" "ingress_sg" {
@@ -99,7 +160,7 @@ resource "aws_lb" "alb_{{ safe_id }}" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.ingress_sg.id]
-  subnets            = [aws_subnet.subnetingress.id]
+  subnets            = [aws_subnet.{{ get_subnet_id(node) }}.id]
 }
 
 resource "aws_wafv2_web_acl" "waf_{{ safe_id }}" {
@@ -137,7 +198,7 @@ resource "aws_eks_cluster" "eks_{{ safe_id }}" {
   role_arn = aws_iam_role.eks_role.arn
 
   vpc_config {
-    subnet_ids = [aws_subnet.subnetapp.id]
+    subnet_ids = [aws_subnet.{{ get_subnet_id(node) }}.id]
   }
 
   depends_on = [
@@ -170,7 +231,7 @@ resource "aws_eks_node_group" "nodes_{{ safe_id }}" {
   cluster_name    = aws_eks_cluster.eks_akscluster.name
   node_group_name = "ng-{{ safe_id }}"
   node_role_arn   = aws_iam_role.node_role.arn
-  subnet_ids      = [aws_subnet.subnetapp.id]
+  subnet_ids      = [aws_subnet.{{ get_subnet_id(node) }}.id]
 
   scaling_config {
     desired_size = 2
@@ -223,7 +284,7 @@ resource "aws_ecs_service" "service_{{ safe_id }}" {
   desired_count   = 1
   launch_type     = "FARGATE"
   network_configuration {
-    subnets          = [aws_subnet.subnetapp.id]
+    subnets          = [aws_subnet.{{ get_subnet_id(node) }}.id]
     security_groups  = [aws_security_group.app_sg.id]
     assign_public_ip = false
   }
@@ -234,7 +295,7 @@ resource "aws_ecs_service" "service_{{ safe_id }}" {
 # RDS DB Subnet Group
 resource "aws_db_subnet_group" "db_subnet_group" {
   name       = "db-subnet-group"
-  subnet_ids = [aws_subnet.subnetdata.id]
+  subnet_ids = [aws_subnet.{{ get_subnet_id(node) }}.id]
 }
 
 # RDS PostgreSQL
@@ -254,7 +315,7 @@ resource "aws_db_instance" "db_{{ safe_id }}" {
 # ElastiCache DB Subnet Group
 resource "aws_elasticache_subnet_group" "cache_subnets" {
   name       = "cache-subnet-group"
-  subnet_ids = [aws_subnet.subnetdata.id]
+  subnet_ids = [aws_subnet.{{ get_subnet_id(node) }}.id]
 }
 
 # ElastiCache Redis
@@ -286,7 +347,7 @@ resource "aws_vpc_endpoint" "pe_{{ safe_id }}" {
                       {% else %} "com.amazonaws.us-east-1.secretsmanager"
                       {% endif %}
   vpc_endpoint_type = "Interface"
-  subnet_ids        = [aws_subnet.subnetpe.id]
+  subnet_ids        = [aws_subnet.{{ get_subnet_id(node) }}.id]
 }
 {% else %}
 # Secrets Manager

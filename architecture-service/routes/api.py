@@ -242,7 +242,7 @@ async def optimize_cost(payload: Dict[str, Any], request: Request):
             
             label = node.get("data", {}).get("label", n_type)
             # Check custom metadata pricing tier
-            meta = node.get("data", {}).get("customMetadata", {})
+            meta = node.get("data", {}).get("customMetadata") or {}
             tier = meta.get("pricingTier", "Standard")
 
             base_cost = catalog.get(n_type, 25.0)

@@ -9,7 +9,23 @@ resource "google_compute_network" "vpc_network" {
   auto_create_subnetworks = false
 }
 
+{% set ns = namespace(has_subnets=false) %}
+{% for node in nodes %}
+  {% if node.type == 'SubnetGroupNode' %}
+    {% set ns.has_subnets = true %}
+  {% endif %}
+{% endfor %}
+
+{% macro get_subnet_name(node) -%}
+  {%- if node.parentNode -%}
+    {{- node.parentNode | sanitize_id -}}
+  {%- else -%}
+    subnetapp
+  {%- endif -%}
+{%- endmacro %}
+
 # Subnets mapped from the visual architecture canvas
+{% if ns.has_subnets %}
 {% for node in nodes %}
 {% if node.type == 'SubnetGroupNode' %}
 {% set safe_id = node.id | sanitize_id %}
@@ -27,6 +43,14 @@ resource "google_compute_subnetwork" "{{ safe_id }}" {
 }
 {% endif %}
 {% endfor %}
+{% else %}
+resource "google_compute_subnetwork" "subnetapp" {
+  name          = "snet-app"
+  ip_cidr_range = "10.0.2.0/24"
+  region        = var.gcp_region
+  network       = google_compute_network.vpc_network.id
+}
+{% endif %}
 
 {% for node in nodes %}
 {% set safe_id = node.id | sanitize_id %}
@@ -79,7 +103,7 @@ resource "google_container_cluster" "gke_{{ safe_id }}" {
   name     = "gke-{{ safe_id }}"
   location = var.gcp_region
   network    = google_compute_network.vpc_network.name
-  subnetwork = google_compute_subnetwork.subnetapp.name
+  subnetwork = google_compute_subnetwork.{{ get_subnet_name(node) }}.name
 
   enable_autopilot = true
 }
