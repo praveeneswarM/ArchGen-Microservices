@@ -26,12 +26,15 @@ export function useArchitecture() {
 
   // Helper to enrich nodes with Draw.io service types and cost badges
   const enrichNodeData = useCallback((nodes: NodeSchema[]): NodeSchema[] => {
+    if (!nodes) return [];
     return nodes.map((node) => {
-      const meta = (node.data as any).customMetadata || {};
+      if (!node) return node;
+      const data = node.data || {};
+      const meta = (data as any).customMetadata || {};
       const pricingTier = meta.pricingTier || "Standard";
 
-      let cost = node.data.cost || "~$25/mo";
-      let typeSubText = node.data.typeSubText || "azurerm_resource";
+      let cost = data.cost || "~$25/mo";
+      let typeSubText = data.typeSubText || "azurerm_resource";
 
       switch (node.type) {
         case "GatewayNode":
@@ -80,7 +83,7 @@ export function useArchitecture() {
       return {
         ...node,
         data: {
-          ...node.data,
+          ...data,
           cost,
           typeSubText,
           ...(customMetadata ? { customMetadata } : {})
@@ -309,27 +312,31 @@ export function useArchitecture() {
   ) => {
     if (!architecture) return;
     
-    // Save state onto history stack first!
-    pushToHistory(architecture.nodes, architecture.edges, architecture.services);
+    try {
+      // Save state onto history stack first!
+      pushToHistory(architecture.nodes || [], architecture.edges || [], architecture.services || []);
 
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
 
-    const enrichedNewNodes = enrichNodeData(newNodes);
+      const enrichedNewNodes = enrichNodeData(newNodes || []);
 
-    const updatedArch = {
-      ...architecture,
-      nodes: enrichedNewNodes,
-      edges: newEdges,
-      services: newServices
-    };
-    setArchitecture(updatedArch);
-    
-    if (isApproved) {
-      syncTimeoutRef.current = setTimeout(() => {
-        syncCanvasWithBackend(enrichedNewNodes, newEdges, newServices, architecture.cloud_provider);
-      }, 800);
+      const updatedArch = {
+        ...architecture,
+        nodes: enrichedNewNodes,
+        edges: newEdges || [],
+        services: newServices || []
+      };
+      setArchitecture(updatedArch);
+      
+      if (isApproved) {
+        syncTimeoutRef.current = setTimeout(() => {
+          syncCanvasWithBackend(enrichedNewNodes, newEdges || [], newServices || [], architecture.cloud_provider);
+        }, 800);
+      }
+    } catch (err) {
+      console.error("Error updating local topology:", err);
     }
   }, [architecture, isApproved, enrichNodeData, pushToHistory, syncCanvasWithBackend]);
 
