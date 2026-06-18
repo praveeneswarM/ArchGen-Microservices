@@ -11,10 +11,20 @@ output "frontend_endpoint_{{ safe_id }}" {
   description = "Public static hosting hostname of the frontend SPA application"
 }
 {% elif node.type == 'BackendNode' %}
+{% if node.id == 'aks-cluster' %}
+output "aks_kube_config_{{ safe_id }}" {
+  value       = azurerm_kubernetes_cluster.aks_{{ safe_id }}.kube_config_raw
+  sensitive   = true
+  description = "Raw Kubernetes config for access to the AKS cluster."
+}
+{% elif node.id == 'aks-user' or node.id == 'aks-system' %}
+# AKS sub-pools do not have direct independent output configurations
+{% else %}
 output "backend_api_url_{{ safe_id }}" {
   value       = azurerm_container_app.api_backend_{{ safe_id }}.ingress[0].fqdn
   description = "Fully Qualified Domain Name of the containerized core backend API service"
 }
+{% endif %}
 {% elif node.type == 'DatabaseNode' %}
 {% if 'Cosmos' in node.data.label or 'nosql' in node.id %}
 output "database_endpoint_{{ safe_id }}" {

@@ -27,12 +27,15 @@ export function useArchitecture() {
   // Helper to enrich nodes with Draw.io service types and cost badges
   const enrichNodeData = useCallback((nodes: NodeSchema[]): NodeSchema[] => {
     return nodes.map((node) => {
+      const meta = (node.data as any).customMetadata || {};
+      const pricingTier = meta.pricingTier || "Standard";
+
       let cost = node.data.cost || "~$25/mo";
       let typeSubText = node.data.typeSubText || "azurerm_resource";
 
       switch (node.type) {
         case "GatewayNode":
-          cost = "~$60/mo";
+          cost = pricingTier === "Premium" ? "~$120/mo" : pricingTier === "Standard" ? "~$60/mo" : "~$25/mo";
           typeSubText = "azurerm_application_gateway";
           break;
         case "FrontendNode":
@@ -40,15 +43,15 @@ export function useArchitecture() {
           typeSubText = "azurerm_static_web_app";
           break;
         case "BackendNode":
-          cost = "~$75/mo";
+          cost = pricingTier === "Premium" ? "~$150/mo" : pricingTier === "Standard" ? "~$75/mo" : "~$30/mo";
           typeSubText = "azurerm_container_app";
           break;
         case "DatabaseNode":
-          cost = "~$115/mo";
+          cost = pricingTier === "Premium" ? "~$240/mo" : pricingTier === "Standard" ? "~$115/mo" : "~$45/mo";
           typeSubText = "azurerm_postgresql_flexible_server";
           break;
         case "CacheNode":
-          cost = "~$45/mo";
+          cost = pricingTier === "Premium" ? "~$90/mo" : pricingTier === "Standard" ? "~$45/mo" : "~$15/mo";
           typeSubText = "azurerm_redis_cache";
           break;
         case "StorageNode":
@@ -65,12 +68,22 @@ export function useArchitecture() {
           break;
       }
 
+      const isGroupNode = ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"].includes(node.type || "");
+      const customMetadata = isGroupNode ? undefined : {
+        pricingTier,
+        minReplicas: meta.minReplicas || "1",
+        maxReplicas: meta.maxReplicas || "5",
+        forceHttps: meta.forceHttps !== undefined ? meta.forceHttps : true,
+        subnetName: meta.subnetName || "subnet-default"
+      };
+
       return {
         ...node,
         data: {
           ...node.data,
           cost,
           typeSubText,
+          ...(customMetadata ? { customMetadata } : {})
         },
       };
     });

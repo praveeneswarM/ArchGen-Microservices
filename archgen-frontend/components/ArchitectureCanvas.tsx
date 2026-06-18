@@ -13,6 +13,8 @@ import ReactFlow, {
   Node,
   ReactFlowInstance,
   MarkerType,
+  applyNodeChanges,
+  applyEdgeChanges,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -39,6 +41,8 @@ import {
   DollarSign,
   LayoutTemplate,
   Maximize2,
+  Shield,
+  Server,
 } from "lucide-react";
 
 interface ArchitectureCanvasProps {
@@ -221,6 +225,12 @@ export default function ArchitectureCanvas({
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(true);
+
+  const onDragStart = (event: React.DragEvent, nodeType: string) => {
+    event.dataTransfer.setData("application/reactflow-type", nodeType);
+    event.dataTransfer.effectAllowed = "move";
+  };
 
   // ── Sync canvas when parent props change ───────────────────────────────────
   useEffect(() => {
@@ -301,11 +311,24 @@ export default function ArchitectureCanvas({
   // ── React Flow event handlers ──────────────────────────────────────────────
   const handleNodesChange = useCallback(
     (changes: any) => {
-      onNodesChange(changes);
-      // Defer sync to allow React Flow states to settle
-      setTimeout(() => triggerParentSync(nodes, edges), 0);
+      setNodes((nds) => {
+        const next = applyNodeChanges(changes, nds);
+        setTimeout(() => triggerParentSync(next, edges), 0);
+        return next;
+      });
     },
-    [onNodesChange, nodes, edges, triggerParentSync]
+    [edges, setNodes, triggerParentSync]
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: any) => {
+      setEdges((eds) => {
+        const next = applyEdgeChanges(changes, eds);
+        setTimeout(() => triggerParentSync(nodes, next), 0);
+        return next;
+      });
+    },
+    [nodes, setEdges, triggerParentSync]
   );
 
   const onConnect = useCallback(
@@ -348,6 +371,10 @@ export default function ArchitectureCanvas({
       });
 
       const labelMap: Record<string, string> = {
+        RegionGroupNode: "Region: East US",
+        ResourceGroupNode: "Resource Group: rg-production",
+        VNetGroupNode: "Virtual Network (VNet): 10.0.0.0/16",
+        SubnetGroupNode: "Subnet Zone (10.0.1.0/24)",
         GatewayNode: "App Gateway Controller",
         FrontendNode: "Web Client Static App",
         BackendNode: "Container App Service",
@@ -360,33 +387,59 @@ export default function ArchitectureCanvas({
 
       const id = `${type.toLowerCase().replace("node", "")}-${Date.now()}`;
       
-      // Attempt to find if we dropped it inside a subnet group
-      // React Flow coordinates are relative when dropped inside a parent
+      // Determine hierarchical parenting based on the dropped type
       let parentNodeId: string | undefined = undefined;
-      const targetSubnet = nodes.find((n) => {
-        if (n.type !== "SubnetGroupNode") return false;
-        const width = n.style?.width || n.data?.width || 300;
-        const height = n.style?.height || n.data?.height || 200;
-        const nx = n.position.x;
-        const ny = n.position.y;
-        
-        // Convert screen drop position back to relative coords
-        return position.x >= nx && position.x <= nx + Number(width) &&
-               position.y >= ny && position.y <= ny + Number(height);
-      });
+      let targetParentType: string | undefined = undefined;
+      
+      const isGroupNode = ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"].includes(type);
+      
+      if (type === "SubnetGroupNode") {
+        targetParentType = "VNetGroupNode";
+      } else if (type === "VNetGroupNode") {
+        targetParentType = "ResourceGroupNode";
+      } else if (type === "ResourceGroupNode") {
+        targetParentType = "RegionGroupNode";
+      } else if (!isGroupNode) {
+        targetParentType = "SubnetGroupNode";
+      }
 
-      if (targetSubnet) {
-        parentNodeId = targetSubnet.id;
-        position.x = position.x - targetSubnet.position.x;
-        position.y = position.y - targetSubnet.position.y;
+      if (targetParentType) {
+        const targetParent = nodes.find((n) => {
+          if (n.type !== targetParentType) return false;
+          const width = n.style?.width || n.data?.width || 300;
+          const height = n.style?.height || n.data?.height || 200;
+          const nx = n.position.x;
+          const ny = n.position.y;
+          
+          return position.x >= nx && position.x <= nx + Number(width) &&
+                 position.y >= ny && position.y <= ny + Number(height);
+        });
+
+        if (targetParent) {
+          parentNodeId = targetParent.id;
+          position.x = position.x - targetParent.position.x;
+          position.y = position.y - targetParent.position.y;
+        }
+      }
+
+      let style: any = undefined;
+      if (type === "RegionGroupNode") {
+        style = { width: 1000, height: 800 };
+      } else if (type === "ResourceGroupNode") {
+        style = { width: 900, height: 700 };
+      } else if (type === "VNetGroupNode") {
+        style = { width: 800, height: 600 };
+      } else if (type === "SubnetGroupNode") {
+        style = { width: 350, height: 250 };
       }
 
       const newNode: Node = {
         id,
         type,
         parentNode: parentNodeId,
-        data: { label: labelMap[type] ?? "New Service" },
+        data: { label: labelMap[type] ?? "New Resource" },
         position,
+        style,
       };
 
       setNodes((nds) => {
@@ -601,12 +654,173 @@ export default function ArchitectureCanvas({
       </div>
 
       {/* ── React Flow canvas ────────────────────────────────────────────────── */}
-      <div className="flex-grow w-full relative">
+      <div className="flex-grow w-full relative animate-fade-in">
+        {/* ── Left Collapsible Node Palette ────────────────────────────────────── */}
+        <div 
+          className={`absolute top-4 left-4 z-20 w-64 bg-[#05070d]/95 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl transition-all duration-300 flex flex-col max-h-[85%] overflow-hidden ${
+            isPaletteOpen ? "translate-x-0 opacity-100" : "-translate-x-72 opacity-0 pointer-events-none"
+          }`}
+        >
+          <div className="p-3 border-b border-white/5 flex items-center justify-between">
+            <span className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-widest">
+              Resource Palette
+            </span>
+            <button 
+              onClick={() => setIsPaletteOpen(false)}
+              className="text-[9px] font-mono text-slate-400 hover:text-white border border-white/10 px-1.5 py-0.5 rounded bg-white/5"
+            >
+              Hide
+            </button>
+          </div>
+
+          <div className="p-3 overflow-y-auto space-y-4 max-h-[400px] custom-scrollbar">
+            {/* Section: Containers */}
+            <div className="space-y-1.5">
+              <span className="text-[8px] font-bold font-mono text-slate-500 uppercase tracking-wider block">
+                Network Containers
+              </span>
+              <div className="grid grid-cols-1 gap-1.5">
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "RegionGroupNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-indigo-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Globe className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Cloud Region</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "ResourceGroupNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-emerald-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Resource Group</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "VNetGroupNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-[#0d111c]"
+                >
+                  <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Virtual Network (VNet)</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "SubnetGroupNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-slate-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Server className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Subnet Zone</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Services */}
+            <div className="space-y-1.5">
+              <span className="text-[8px] font-bold font-mono text-slate-500 uppercase tracking-wider block">
+                Cloud Compute & Ingress
+              </span>
+              <div className="grid grid-cols-1 gap-1.5">
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "GatewayNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Application Gateway</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "FrontendNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Globe className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Static Web App</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "BackendNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Container App Compute</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[8px] font-bold font-mono text-slate-500 uppercase tracking-wider block">
+                Storage & Databases
+              </span>
+              <div className="grid grid-cols-1 gap-1.5">
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "DatabaseNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Database className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Relational Database</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "CacheNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Cpu className="w-3.5 h-3.5 text-red-400" />
+                  <span>Redis Session Cache</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "StorageNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Blob Storage Account</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[8px] font-bold font-mono text-slate-500 uppercase tracking-wider block">
+                Security & Monitoring
+              </span>
+              <div className="grid grid-cols-1 gap-1.5">
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "SecurityNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Key className="w-3.5 h-3.5 text-yellow-400" />
+                  <span>Key Vault Secrets</span>
+                </div>
+                <div 
+                  draggable
+                  onDragStart={(e) => onDragStart(e, "MonitoringNode")}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#090b11] border border-white/5 hover:border-cyan-500/30 cursor-grab transition-all text-[10px] font-mono text-slate-300 active:cursor-grabbing hover:bg-white/5"
+                >
+                  <Activity className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Log Telemetry Monitor</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Button to re-open palette */}
+        {!isPaletteOpen && (
+          <button 
+            onClick={() => setIsPaletteOpen(true)}
+            className="absolute top-4 left-4 z-20 bg-[#05070d]/95 border border-white/10 px-3 py-1.5 rounded-lg text-[10px] font-mono text-slate-300 hover:text-white transition shadow-lg flex items-center gap-1 hover:bg-white/5"
+          >
+            <Plus className="w-3 h-3 text-cyan-400" /> Show Palette
+          </button>
+        )}
+
         <ReactFlow
           nodes={nodesWithListeners}
           edges={edges}
           onNodesChange={handleNodesChange}
-          onEdgesChange={onEdgesChange}
+          onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           nodeTypes={nodeTypes}
           onInit={setReactFlowInstance}

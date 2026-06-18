@@ -48,6 +48,7 @@ class NodeModel(BaseModel):
     type: str
     data: Dict[str, Any]
     position: Optional[Dict[str, Any]] = None
+    parentNode: Optional[str] = None
 
 class EdgeModel(BaseModel):
     id: str

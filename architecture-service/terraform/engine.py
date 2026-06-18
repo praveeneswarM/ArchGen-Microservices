@@ -23,7 +23,10 @@ class TerraformEngine:
             # Remove all non-alphanumeric chars, lowercased.
             safe_val = re.sub(r'[^a-z0-9]', '', str(value).lower())
             # Truncate to 10 chars to prevent max-length violations (like Storage 24-char limit)
-            return safe_val[:10] if safe_val else "id"
+            # Take first 6 and last 4 characters if longer than 10 to preserve prefix and uniqueness.
+            if len(safe_val) > 10:
+                return safe_val[:6] + safe_val[-4:]
+            return safe_val if safe_val else "id"
             
         self.env.filters['sanitize_id'] = sanitize_id
 
