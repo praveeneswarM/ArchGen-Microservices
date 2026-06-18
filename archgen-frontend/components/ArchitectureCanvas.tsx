@@ -617,6 +617,7 @@ export default function ArchitectureCanvas({
           fitViewOptions={{ padding: 0.15 }}
           attributionPosition="bottom-left"
           defaultEdgeOptions={{
+            type: "smoothstep",
             animated: true,
             markerEnd: { type: MarkerType.ArrowClosed },
           }}

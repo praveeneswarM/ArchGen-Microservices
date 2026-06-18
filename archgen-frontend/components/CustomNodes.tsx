@@ -184,7 +184,7 @@ const NestedGroup = memo(({
   return (
     <div className={`w-full h-full rounded-2xl border-2 p-4 flex flex-col relative transition-all duration-300 ${bgClass} ${borderClass} ${selected ? "ring-2 ring-cyan-400/50 shadow-neon-blue" : "shadow-md"}`}>
       <NodeResizer minWidth={200} minHeight={120} isVisible={selected} lineClassName="border-cyan-500" handleClassName="bg-cyan-500 rounded-full w-2.5 h-2.5" />
-      <div className="flex items-center gap-2 mb-3 select-none pointer-events-none">
+      <div className="flex items-center gap-2 mb-3 select-none pointer-events-none border-b border-white/5 pb-2">
         <div className="p-1 rounded bg-[#09090b] border border-white/5 text-slate-300">
           {icon}
         </div>
@@ -218,8 +218,8 @@ export const RegionGroupNode = memo(({ id, data, selected }: any) => (
     data={data}
     selected={selected}
     title="Cloud Region"
-    borderClass="border-indigo-500/40"
-    bgClass="bg-gradient-to-br from-indigo-950/20 to-slate-950/40 backdrop-blur-md"
+    borderClass="border-indigo-500/25"
+    bgClass="bg-indigo-950/5"
     icon={<Globe className="w-3.5 h-3.5 text-indigo-400" />}
   />
 ));
@@ -231,8 +231,8 @@ export const ResourceGroupNode = memo(({ id, data, selected }: any) => (
     data={data}
     selected={selected}
     title="Resource Group"
-    borderClass="border-emerald-500/30"
-    bgClass="bg-gradient-to-br from-emerald-950/15 to-slate-950/35 backdrop-blur-md"
+    borderClass="border-emerald-500/20"
+    bgClass="bg-emerald-950/5"
     icon={<Shield className="w-3.5 h-3.5 text-emerald-400" />}
   />
 ));
@@ -244,8 +244,8 @@ export const VNetGroupNode = memo(({ id, data, selected }: any) => (
     data={data}
     selected={selected}
     title="Virtual Network (VNet)"
-    borderClass="border-cyan-500/30 border-dashed"
-    bgClass="bg-gradient-to-br from-cyan-950/15 to-slate-950/35 backdrop-blur-md"
+    borderClass="border-cyan-500/25 border-dashed"
+    bgClass="bg-cyan-950/5"
     icon={<Globe className="w-3.5 h-3.5 text-cyan-400" />}
   />
 ));
@@ -257,8 +257,8 @@ export const SubnetGroupNode = memo(({ id, data, selected }: any) => (
     data={data}
     selected={selected}
     title="Subnet Zone"
-    borderClass="border-slate-700/60"
-    bgClass="bg-slate-900/60 backdrop-blur-md"
+    borderClass="border-slate-800"
+    bgClass="bg-slate-900/10"
     icon={<Server className="w-3.5 h-3.5 text-slate-400" />}
   />
 ));
