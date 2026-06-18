@@ -225,6 +225,7 @@ export default function ArchitectureCanvas({
 
   const nodesRef = useRef<Node[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
+  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -274,10 +275,9 @@ export default function ArchitectureCanvas({
   const bindNodeListeners = useCallback(
     (nds: Node[]): Node[] =>
       nds.map((n) => {
-        const isGroup = ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"].includes(n.type || "");
         return {
           ...n,
-          draggable: !isGroup && !(n as any).draggableLocked,
+          draggable: !(n as any).draggableLocked,
           data: {
             ...n.data,
             onLabelChange: handleLabelChange,
@@ -327,10 +327,20 @@ export default function ArchitectureCanvas({
     (changes: any) => {
       setNodes((nds) => {
         const next = applyNodeChanges(changes, nds);
+        
         const hasRemoval = changes.some((c: any) => c.type === "remove");
         if (hasRemoval) {
           setTimeout(() => triggerParentSync(next, edgesRef.current), 0);
         }
+
+        const hasDimensions = changes.some((c: any) => c.type === "dimensions");
+        if (hasDimensions) {
+          if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
+          resizeTimeoutRef.current = setTimeout(() => {
+            triggerParentSync(next, edgesRef.current);
+          }, 500);
+        }
+
         return next;
       });
     },
@@ -353,7 +363,76 @@ export default function ArchitectureCanvas({
 
   const onNodeDragStop = useCallback(
     (event: React.MouseEvent, node: Node) => {
-      triggerParentSync();
+      setNodes((nds) => {
+        const isGroupNode = ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"].includes(node.type || "");
+        
+        let targetParentType: string | undefined = undefined;
+        if (node.type === "SubnetGroupNode") {
+          targetParentType = "VNetGroupNode";
+        } else if (node.type === "VNetGroupNode") {
+          targetParentType = "ResourceGroupNode";
+        } else if (node.type === "ResourceGroupNode") {
+          targetParentType = "RegionGroupNode";
+        } else if (!isGroupNode) {
+          targetParentType = "SubnetGroupNode";
+        }
+
+        const getAbsolutePosition = (n: Node, allNodes: Node[]): { x: number; y: number } => {
+          let x = n.position.x;
+          let y = n.position.y;
+          let pId = n.parentNode;
+          while (pId) {
+            const p = allNodes.find((parent) => parent.id === pId);
+            if (!p) break;
+            x += p.position.x;
+            y += p.position.y;
+            pId = p.parentNode;
+          }
+          return { x, y };
+        };
+
+        const absPos = getAbsolutePosition(node, nds);
+        let newParentNodeId: string | undefined = undefined;
+
+        if (targetParentType) {
+          const targetParent = nds.find((n) => {
+            if (n.id === node.id) return false;
+            if (n.type !== targetParentType) return false;
+            
+            const parentAbsPos = getAbsolutePosition(n, nds);
+            const w = n.style?.width || n.data?.width || 300;
+            const h = n.style?.height || n.data?.height || 200;
+            
+            return absPos.x >= parentAbsPos.x && absPos.x <= parentAbsPos.x + Number(w) &&
+                   absPos.y >= parentAbsPos.y && absPos.y <= parentAbsPos.y + Number(h);
+          });
+
+          if (targetParent) {
+            newParentNodeId = targetParent.id;
+          }
+        }
+
+        const parentAbs = newParentNodeId 
+          ? getAbsolutePosition(nds.find((n) => n.id === newParentNodeId)!, nds) 
+          : { x: 0, y: 0 };
+
+        const next = nds.map((n) => {
+          if (n.id === node.id) {
+            return {
+              ...n,
+              parentNode: newParentNodeId,
+              position: {
+                x: absPos.x - parentAbs.x,
+                y: absPos.y - parentAbs.y,
+              },
+            };
+          }
+          return n;
+        });
+
+        setTimeout(() => triggerParentSync(next, edgesRef.current), 0);
+        return next;
+      });
     },
     [triggerParentSync]
   );
