@@ -100,12 +100,15 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
   const result: Node[] = [];
 
   // Define Subnet Sizes dynamically based on child node counts
-  const subnetConfig: Record<string, { label: string; x: number; y: number; width: number; height: number }> = {
-    "subnet-ingress": { label: "Ingress Subnet (10.0.1.0/24)", x: 40, y: 60, width: 380, height: 260 },
-    "subnet-mgmt": { label: "Management Subnet (10.0.4.0/24)", x: 450, y: 60, width: 380, height: 260 },
-    "subnet-pe": { label: "Private Endpoint Subnet (10.0.5.0/24)", x: 860, y: 60, width: 380, height: 260 },
-    "subnet-app": { label: "Application Subnet (10.0.2.0/24)", x: 40, y: 350, width: 1200, height: 280 },
-    "subnet-data": { label: "Data Subnet (10.0.3.0/24)", x: 40, y: 660, width: 1200, height: 280 },
+  const subnetConfig: Record<
+    string,
+    { label: string; x: number; y: number; width: number; height: number; colStep: number; rowStep: number }
+  > = {
+    "subnet-ingress": { label: "Ingress Subnet (10.0.1.0/24)", x: 40, y: 60, width: 660, height: 340, colStep: 320, rowStep: 130 },
+    "subnet-mgmt": { label: "Management Subnet (10.0.4.0/24)", x: 740, y: 60, width: 660, height: 620, colStep: 320, rowStep: 130 },
+    "subnet-pe": { label: "Private Endpoint Subnet (10.0.5.0/24)", x: 1440, y: 60, width: 400, height: 450, colStep: 320, rowStep: 130 },
+    "subnet-app": { label: "Application Subnet (10.0.2.0/24)", x: 40, y: 720, width: 1800, height: 340, colStep: 350, rowStep: 130 },
+    "subnet-data": { label: "Data Subnet (10.0.3.0/24)", x: 40, y: 1100, width: 1800, height: 340, colStep: 350, rowStep: 130 },
   };
 
   // Build the 4-level nesting hierarchy:
@@ -117,7 +120,7 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     type: "RegionGroupNode",
     position: { x: 50, y: 50 },
     data: { label: `Region: ${normProvider === "azure" ? "East US" : normProvider === "aws" ? "us-east-1" : "us-central1"}` },
-    style: { width: 1360, height: 1040 },
+    style: { width: 2000, height: 1520 },
     zIndex: 1,
   });
 
@@ -128,7 +131,7 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     parentNode: "region-group",
     position: { x: 30, y: 60 },
     data: { label: normProvider === "azure" ? "Resource Group: rg-production" : normProvider === "aws" ? "AWS Account Scope" : "GCP Project Scope" },
-    style: { width: 1300, height: 950 },
+    style: { width: 1940, height: 1430 },
     zIndex: 2,
   });
 
@@ -139,7 +142,7 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     parentNode: "rg-group",
     position: { x: 30, y: 60 },
     data: { label: normProvider === "aws" ? "VPC: 10.0.0.0/16" : "Virtual Network (VNet): 10.0.0.0/16" },
-    style: { width: 1240, height: 860 },
+    style: { width: 1880, height: 1340 },
     zIndex: 3,
   });
 
@@ -149,18 +152,18 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     if (!cfg) return;
 
     // Dynamically expand subnet sizes if child count exceeds base layout capacity
-    const childWidth = 280;
-    const padding = 30;
-    const itemsPerRow = Math.max(1, Math.floor((cfg.width - padding) / childWidth));
+    const padding = 40;
+    const itemsPerRow = Math.max(1, Math.floor(1 + (cfg.width - padding - 256) / cfg.colStep));
     const rows = Math.ceil(childNodes.length / itemsPerRow);
     
     let subWidth = cfg.width;
     let subHeight = cfg.height;
     if (childNodes.length > 0) {
       if (childNodes.length > itemsPerRow) {
-        subHeight = Math.max(cfg.height, rows * 130 + 80);
+        subHeight = Math.max(cfg.height, rows * cfg.rowStep + 80);
       }
-      const neededWidth = Math.min(childNodes.length, itemsPerRow) * (childWidth + 20) + 40;
+      const cols = Math.min(childNodes.length, itemsPerRow);
+      const neededWidth = (cols - 1) * cfg.colStep + padding + 256;
       subWidth = Math.max(cfg.width, neededWidth);
     }
 
@@ -180,8 +183,8 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
       const row = Math.floor(index / itemsPerRow);
       const col = index % itemsPerRow;
       
-      const childX = padding + col * (childWidth + 20);
-      const childY = 60 + row * 120;
+      const childX = padding + col * cfg.colStep;
+      const childY = 60 + row * cfg.rowStep;
 
       result.push({
         ...node,

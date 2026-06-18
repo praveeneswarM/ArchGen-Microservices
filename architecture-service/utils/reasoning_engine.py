@@ -121,12 +121,13 @@ class InfrastructureReasoningEngine:
         services = ["identity", "compute", "storage", "database", "networking", "security"]
 
         # Outer Nesting Structure Node definitions
+        # Outer Nesting Structure Node definitions
         nodes.append({
             "id": "region-group",
             "type": "RegionGroupNode",
             "position": {"x": 50, "y": 50},
             "data": {"label": f"Region: {self.cloud_provider.upper()} East"},
-            "style": {"width": 1360, "height": 1040}
+            "style": {"width": 2000, "height": 1520}
         })
 
         nodes.append({
@@ -135,7 +136,7 @@ class InfrastructureReasoningEngine:
             "parentNode": "region-group",
             "position": {"x": 30, "y": 60},
             "data": {"label": f"Resource Scope: rg-production"},
-            "style": {"width": 1300, "height": 950}
+            "style": {"width": 1940, "height": 1430}
         })
 
         nodes.append({
@@ -144,16 +145,16 @@ class InfrastructureReasoningEngine:
             "parentNode": "rg-group",
             "position": {"x": 30, "y": 60},
             "data": {"label": f"Virtual Network (VPC): 10.0.0.0/16"},
-            "style": {"width": 1240, "height": 860}
+            "style": {"width": 1880, "height": 1340}
         })
 
         # Subnet Nodes definitions
         subnets = {
-            "subnet-ingress": {"label": "Ingress Subnet (10.0.1.0/24)", "x": 40, "y": 60, "width": 380, "height": 260},
-            "subnet-mgmt": {"label": "Management Subnet (10.0.4.0/24)", "x": 450, "y": 60, "width": 380, "height": 260},
-            "subnet-pe": {"label": "Private Endpoint Subnet (10.0.5.0/24)", "x": 860, "y": 60, "width": 380, "height": 260},
-            "subnet-app": {"label": "Application Subnet (10.0.2.0/24)", "x": 40, "y": 350, "width": 1200, "height": 280},
-            "subnet-data": {"label": "Data Subnet (10.0.3.0/24)", "x": 40, "y": 660, "width": 1200, "height": 280},
+            "subnet-ingress": {"label": "Ingress Subnet (10.0.1.0/24)", "x": 40, "y": 60, "width": 660, "height": 340},
+            "subnet-mgmt": {"label": "Management Subnet (10.0.4.0/24)", "x": 740, "y": 60, "width": 660, "height": 620},
+            "subnet-pe": {"label": "Private Endpoint Subnet (10.0.5.0/24)", "x": 1440, "y": 60, "width": 400, "height": 450},
+            "subnet-app": {"label": "Application Subnet (10.0.2.0/24)", "x": 40, "y": 720, "width": 1800, "height": 340},
+            "subnet-data": {"label": "Data Subnet (10.0.3.0/24)", "x": 40, "y": 1100, "width": 1800, "height": 340},
         }
 
         for sub_id, cfg in subnets.items():
@@ -190,27 +191,27 @@ class InfrastructureReasoningEngine:
                 "animated": animated
             })
 
-        # --- 1. Ingress Subnet Resources (x: 40, y: 60) ---
-        add_nested_node("dns", "GatewayNode", self.get_cloud_resource_name("dns"), 30, 60, "subnet-ingress", "Global DNS routing", 10)
-        add_nested_node("cdn", "GatewayNode", self.get_cloud_resource_name("cdn"), 30, 160, "subnet-ingress", "Content Delivery Network", 50)
-        add_nested_node("waf", "SecurityNode", self.get_cloud_resource_name("waf"), 200, 60, "subnet-ingress", "WAF Rules Engine", 120)
-        add_nested_node("appgw", "GatewayNode", self.get_cloud_resource_name("appgw"), 200, 160, "subnet-ingress", "Application Gateway", 100)
+        # --- 1. Ingress Subnet Resources ---
+        add_nested_node("dns", "GatewayNode", self.get_cloud_resource_name("dns"), 40, 60, "subnet-ingress", "Global DNS routing", 10)
+        add_nested_node("cdn", "GatewayNode", self.get_cloud_resource_name("cdn"), 40, 190, "subnet-ingress", "Content Delivery Network", 50)
+        add_nested_node("waf", "SecurityNode", self.get_cloud_resource_name("waf"), 360, 60, "subnet-ingress", "WAF Rules Engine", 120)
+        add_nested_node("appgw", "GatewayNode", self.get_cloud_resource_name("appgw"), 360, 190, "subnet-ingress", "Application Gateway", 100)
 
         add_edge("dns", "cdn", False)
         add_edge("cdn", "waf", True)
         add_edge("waf", "appgw", True)
 
-        # --- 2. Application Subnet Compute Resources (x: 40, y: 350) ---
-        add_nested_node("aks-cluster", "BackendNode", f"{self.get_cloud_resource_name('aks')} Engine", 30, 60, "subnet-app", "K8s Control Plane", 100)
-        add_nested_node("aks-system", "BackendNode", "System Node Pool", 30, 160, "subnet-app", "Core cluster system pods", 120)
-        add_nested_node("aks-user", "BackendNode", "User Node Pool", 280, 160, "subnet-app", "Compute worker nodes", 240)
+        # --- 2. Application Subnet Compute Resources ---
+        add_nested_node("aks-cluster", "BackendNode", f"{self.get_cloud_resource_name('aks')} Engine", 40, 60, "subnet-app", "K8s Control Plane", 100)
+        add_nested_node("aks-system", "BackendNode", "System Node Pool", 40, 190, "subnet-app", "Core cluster system pods", 120)
+        add_nested_node("aks-user", "BackendNode", "User Node Pool", 390, 190, "subnet-app", "Compute worker nodes", 240)
         
         # Deploy microservices inside the App Subnet (representing AKS Deployments)
-        add_nested_node("svc-frontend", "FrontendNode", "Frontend UI Service", 530, 60, "subnet-app", "Static Next.js pod", 30)
-        add_nested_node("svc-api-gateway", "BackendNode", "API Gateway Controller", 530, 160, "subnet-app", "Spring Cloud gateway", 40)
-        add_nested_node("svc-auth", "BackendNode", "Auth Identity Service", 780, 60, "subnet-app", "User profile authenticator", 40)
-        add_nested_node("svc-projects", "BackendNode", "Projects Core API", 780, 160, "subnet-app", "Business layer service", 40)
-        add_nested_node("svc-architecture", "BackendNode", "Architecture Logic Service", 1030, 160, "subnet-app", "Processing logic pod", 40)
+        add_nested_node("svc-frontend", "FrontendNode", "Frontend UI Service", 740, 60, "subnet-app", "Static Next.js pod", 30)
+        add_nested_node("svc-api-gateway", "BackendNode", "API Gateway Controller", 740, 190, "subnet-app", "Spring Cloud gateway", 40)
+        add_nested_node("svc-auth", "BackendNode", "Auth Identity Service", 1090, 60, "subnet-app", "User profile authenticator", 40)
+        add_nested_node("svc-projects", "BackendNode", "Projects Core API", 1090, 190, "subnet-app", "Business layer service", 40)
+        add_nested_node("svc-architecture", "BackendNode", "Architecture Logic Service", 1440, 190, "subnet-app", "Processing logic pod", 40)
 
         add_edge("appgw", "aks-cluster", True)
         add_edge("aks-cluster", "aks-system", False)
@@ -222,12 +223,12 @@ class InfrastructureReasoningEngine:
         add_edge("svc-api-gateway", "svc-projects", True)
         add_edge("svc-api-gateway", "svc-architecture", True)
 
-        # --- 3. Data Subnet Database Resources (x: 40, y: 660) ---
-        add_nested_node("db-primary", "DatabaseNode", self.get_cloud_resource_name("postgres"), 30, 60, "subnet-data", "Primary DB Instance", 250)
-        add_nested_node("db-replica", "DatabaseNode", f"{self.get_cloud_resource_name('postgres')} Replica", 30, 160, "subnet-data", "HA Read-Replica Server", 250)
-        add_nested_node("redis", "CacheNode", self.get_cloud_resource_name("redis"), 280, 160, "subnet-data", "In-memory cache cluster", 120)
-        add_nested_node("blob", "StorageNode", self.get_cloud_resource_name("blob"), 530, 160, "subnet-data", "Blob Assets Bucket", 80)
-        add_nested_node("tf-state", "StorageNode", "Terraform State Storage", 780, 160, "subnet-data", "State locking bucket", 5)
+        # --- 3. Data Subnet Database Resources ---
+        add_nested_node("db-primary", "DatabaseNode", self.get_cloud_resource_name("postgres"), 40, 60, "subnet-data", "Primary DB Instance", 250)
+        add_nested_node("db-replica", "DatabaseNode", f"{self.get_cloud_resource_name('postgres')} Replica", 40, 190, "subnet-data", "HA Read-Replica Server", 250)
+        add_nested_node("redis", "CacheNode", self.get_cloud_resource_name("redis"), 390, 190, "subnet-data", "In-memory cache cluster", 120)
+        add_nested_node("blob", "StorageNode", self.get_cloud_resource_name("blob"), 740, 190, "subnet-data", "Blob Assets Bucket", 80)
+        add_nested_node("tf-state", "StorageNode", "Terraform State Storage", 1090, 190, "subnet-data", "State locking bucket", 5)
 
         add_edge("db-primary", "db-replica", False)
         add_edge("svc-projects", "db-primary", False)
@@ -236,10 +237,10 @@ class InfrastructureReasoningEngine:
         add_edge("svc-projects", "redis", False)
         add_edge("svc-projects", "blob", False)
 
-        # --- 4. Private Endpoint Subnet (x: 860, y: 60) ---
-        add_nested_node("pe-db", "SecurityNode", "Private Link - DB Connection", 30, 60, "subnet-pe", "DB private IP binding", 10)
-        add_nested_node("pe-kv", "SecurityNode", "Private Link - Vault Storage", 30, 160, "subnet-pe", "Vault private IP binding", 10)
-        add_nested_node("pe-storage", "SecurityNode", "Private Link - Storage Account", 200, 160, "subnet-pe", "Blob private IP binding", 10)
+        # --- 4. Private Endpoint Subnet ---
+        add_nested_node("pe-db", "SecurityNode", "Private Link - DB Connection", 40, 60, "subnet-pe", "DB private IP binding", 10)
+        add_nested_node("pe-kv", "SecurityNode", "Private Link - Vault Storage", 40, 190, "subnet-pe", "Vault private IP binding", 10)
+        add_nested_node("pe-storage", "SecurityNode", "Private Link - Storage Account", 40, 320, "subnet-pe", "Blob private IP binding", 10)
 
         add_edge("pe-db", "db-primary", False)
         add_edge("pe-kv", "keyvault", False)
@@ -247,20 +248,20 @@ class InfrastructureReasoningEngine:
         add_edge("svc-projects", "pe-db", False)
         add_edge("svc-auth", "pe-kv", False)
 
-        # --- 5. Management Subnet Resources (x: 450, y: 60) ---
-        add_nested_node("keyvault", "SecurityNode", self.get_cloud_resource_name("keyvault"), 30, 60, "subnet-mgmt", "Secrets and keys vault", 20)
-        add_nested_node("iam", "SecurityNode", self.get_cloud_resource_name("iam"), 30, 160, "subnet-mgmt", "Access Roles Identity", 0)
-        add_nested_node("bastion", "SecurityNode", self.get_cloud_resource_name("bastion"), 200, 60, "subnet-mgmt", "Secure shell jumpbox", 140)
-        add_nested_node("acr", "StorageNode", self.get_cloud_resource_name("acr"), 200, 160, "subnet-mgmt", "Private image registry", 50)
-        add_nested_node("backup", "StorageNode", self.get_cloud_resource_name("backup"), 30, 160, "subnet-mgmt", "Recovery Vault storage", 60)
+        # --- 5. Management Subnet Resources ---
+        add_nested_node("keyvault", "SecurityNode", self.get_cloud_resource_name("keyvault"), 40, 60, "subnet-mgmt", "Secrets and keys vault", 20)
+        add_nested_node("iam", "SecurityNode", self.get_cloud_resource_name("iam"), 40, 190, "subnet-mgmt", "Access Roles Identity", 0)
+        add_nested_node("backup", "StorageNode", self.get_cloud_resource_name("backup"), 40, 320, "subnet-mgmt", "Recovery Vault storage", 60)
+        add_nested_node("bastion", "SecurityNode", self.get_cloud_resource_name("bastion"), 360, 60, "subnet-mgmt", "Secure shell jumpbox", 140)
+        add_nested_node("acr", "StorageNode", self.get_cloud_resource_name("acr"), 360, 190, "subnet-mgmt", "Private image registry", 50)
 
         add_edge("iam", "aks-cluster", False)
         add_edge("aks-cluster", "acr", False)
         add_edge("bastion", "aks-cluster", False)
 
-        # --- 6. Global Monitoring components (placed in management for logical grouping) ---
-        add_nested_node("log-analytics", "MonitoringNode", self.get_cloud_resource_name("log_analytics"), 200, 160, "subnet-mgmt", "Ingestion Analytics workspace", 100)
-        add_nested_node("app-insights", "MonitoringNode", self.get_cloud_resource_name("app_insights"), 200, 60, "subnet-mgmt", "APM distributed tracer", 50)
+        # --- 6. Global Monitoring components ---
+        add_nested_node("log-analytics", "MonitoringNode", self.get_cloud_resource_name("log_analytics"), 360, 320, "subnet-mgmt", "Ingestion Analytics workspace", 100)
+        add_nested_node("app-insights", "MonitoringNode", self.get_cloud_resource_name("app_insights"), 40, 450, "subnet-mgmt", "APM distributed tracer", 50)
 
         add_edge("aks-cluster", "log-analytics", False)
         add_edge("db-primary", "log-analytics", False)
