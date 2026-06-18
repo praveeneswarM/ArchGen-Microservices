@@ -223,6 +223,17 @@ export default function ArchitectureCanvas({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges as Edge[]);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
+  const nodesRef = useRef<Node[]>(nodes);
+  const edgesRef = useRef<Edge[]>(edges);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [isPaletteOpen, setIsPaletteOpen] = useState(true);
@@ -279,7 +290,10 @@ export default function ArchitectureCanvas({
 
   // ── Derive services list from canvas nodes ──────────────────────────────────
   const triggerParentSync = useCallback(
-    (updatedNodes: Node[], updatedEdges: Edge[]) => {
+    (updatedNodes?: Node[], updatedEdges?: Edge[]) => {
+      const activeNodes = updatedNodes || nodesRef.current;
+      const activeEdges = updatedEdges || edgesRef.current;
+
       const categoryMap: Record<string, string> = {
         GatewayNode: "gateway",
         FrontendNode: "frontend",
@@ -291,7 +305,7 @@ export default function ArchitectureCanvas({
         MonitoringNode: "monitoring",
       };
 
-      const services: ServiceSchema[] = updatedNodes
+      const services: ServiceSchema[] = activeNodes
         .filter((n) => !["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"].includes(n.type || ""))
         .map((node) => ({
           name: node.data?.label ?? node.id,
@@ -300,8 +314,8 @@ export default function ArchitectureCanvas({
         }));
 
       onTopologyChange(
-        updatedNodes as unknown as NodeSchema[],
-        updatedEdges as unknown as EdgeSchema[],
+        activeNodes as unknown as NodeSchema[],
+        activeEdges as unknown as EdgeSchema[],
         services
       );
     },
@@ -313,22 +327,35 @@ export default function ArchitectureCanvas({
     (changes: any) => {
       setNodes((nds) => {
         const next = applyNodeChanges(changes, nds);
-        setTimeout(() => triggerParentSync(next, edges), 0);
+        const hasRemoval = changes.some((c: any) => c.type === "remove");
+        if (hasRemoval) {
+          setTimeout(() => triggerParentSync(next, edgesRef.current), 0);
+        }
         return next;
       });
     },
-    [edges, setNodes, triggerParentSync]
+    [setNodes, triggerParentSync]
   );
 
   const handleEdgesChange = useCallback(
     (changes: any) => {
       setEdges((eds) => {
         const next = applyEdgeChanges(changes, eds);
-        setTimeout(() => triggerParentSync(nodes, next), 0);
+        const hasRemoval = changes.some((c: any) => c.type === "remove");
+        if (hasRemoval) {
+          setTimeout(() => triggerParentSync(nodesRef.current, next), 0);
+        }
         return next;
       });
     },
-    [nodes, setEdges, triggerParentSync]
+    [setEdges, triggerParentSync]
+  );
+
+  const onNodeDragStop = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      triggerParentSync();
+    },
+    [triggerParentSync]
   );
 
   const onConnect = useCallback(
@@ -343,11 +370,11 @@ export default function ArchitectureCanvas({
           },
           eds
         );
-        triggerParentSync(nodes, next);
+        setTimeout(() => triggerParentSync(nodesRef.current, next), 0);
         return next;
       });
     },
-    [nodes, setEdges, triggerParentSync]
+    [triggerParentSync]
   );
 
   // ── HTML5 Drag & Drop ──────────────────────────────────────────────────────
@@ -822,6 +849,7 @@ export default function ArchitectureCanvas({
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
+          onNodeDragStop={onNodeDragStop}
           nodeTypes={nodeTypes}
           onInit={setReactFlowInstance}
           onNodeClick={onNodeClick}
