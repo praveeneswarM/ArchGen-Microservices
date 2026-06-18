@@ -9,6 +9,7 @@ def add_cors(app: FastAPI, settings: Settings) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
+        allow_origin_regex="https?://.*",
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
         allow_headers=["Authorization", "Content-Type", "Accept", "X-Correlation-Id"],
