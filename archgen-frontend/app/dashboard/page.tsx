@@ -69,7 +69,7 @@ import {
 } from "../../lib/api";
 import { RequirementInput, NodeSchema } from "../../types";
 
-type SidebarTab = "dashboard" | "studio" | "projects" | "templates" | "terraform" | "validation" | "cost" | "settings";
+type SidebarTab = "dashboard" | "generator" | "studio" | "projects" | "templates" | "terraform" | "validation" | "cost" | "settings";
 
 const PRESETS = [
   {
@@ -131,6 +131,7 @@ export default function DashboardPage() {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
   const [projectVersions, setProjectVersions] = useState<any[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Requirement Config State
   const [projectName, setProjectName] = useState("Enterprise Stack");
@@ -232,6 +233,7 @@ export default function DashboardPage() {
     pushActivity("AI planning started using fallback chain");
     await triggerGenerate(formData);
     pushActivity("AI planning completed successfully");
+    setActiveTab("studio");
   };
 
   const handleOpenProject = (proj: any) => {
@@ -579,6 +581,18 @@ export default function DashboardPage() {
     </div>
   );
 
+  const renderGeneratorTab = () => (
+    <div className="space-y-6 max-w-3xl mx-auto animate-fade-in py-4">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Requirements Collection Wizard</h1>
+        <p className="text-sm text-slate-400 mt-1">Specify networking boundaries, workload compute configurations, and security protocols to compile your cloud canvas.</p>
+      </div>
+      <div className="glass-card rounded-3xl p-2 shadow-2xl">
+        <RequirementForm onSubmit={handleWizardSubmit} isLoading={loading} />
+      </div>
+    </div>
+  );
+
   const renderStudioTab = () => (
     <div className="h-full flex flex-col min-h-[calc(100vh-80px)]">
       {/* Studio Header Toolbar */}
@@ -598,6 +612,21 @@ export default function DashboardPage() {
             <button onClick={handleSaveProject} className="px-3.5 py-2 bg-[#0d111d] hover:bg-[#1e293b] border border-white/10 text-slate-200 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5">
               <Save className="w-4 h-4" /> Save Project
             </button>
+            {activeProjectId && (
+              <button 
+                onClick={() => {
+                  setIsHistoryOpen(!isHistoryOpen);
+                  setSelectedNode(null);
+                }} 
+                className={`px-3.5 py-2 border text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5 ${
+                  isHistoryOpen 
+                    ? "bg-cyan-500/10 border-cyan-500 text-cyan-400" 
+                    : "bg-[#0d111d] hover:bg-[#1e293b] border-white/10 text-slate-200"
+                }`}
+              >
+                <History className="w-4 h-4" /> Snapshots
+              </button>
+            )}
             <button onClick={exportArchitectureJson} className="px-3.5 py-2 bg-[#0d111d] hover:bg-[#1e293b] border border-white/10 text-slate-200 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5">
               <Download className="w-4 h-4" /> JSON
             </button>
@@ -611,15 +640,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Main Split-View Workspace */}
-      <div className="flex-1 grid grid-cols-1 xl:grid-cols-[380px_1fr_400px] overflow-hidden min-h-[500px]">
-        {/* Left Side: Requirements builder form */}
-        <div className="border-r border-white/5 bg-[#05070d] p-5 overflow-y-auto max-h-[80vh]">
-          <RequirementForm onSubmit={handleWizardSubmit} isLoading={loading} />
-        </div>
-
+      {/* Main Full-Screen Workspace */}
+      <div className="flex-1 flex relative overflow-hidden min-h-[500px]">
         {/* Center: React Flow Interactive Canvas */}
-        <div className="relative bg-[#0b0f19] flex flex-col overflow-hidden border-r border-white/5">
+        <div className="flex-grow relative bg-[#0b0f19] flex flex-col overflow-hidden">
           <ArchitectureCanvas
             initialNodes={architecture?.nodes || []}
             initialEdges={architecture?.edges || []}
@@ -630,64 +654,49 @@ export default function DashboardPage() {
             undo={undo}
             redo={redo}
             triggerAiAssist={triggerAiAssist}
-            onSelectNode={setSelectedNode}
+            onSelectNode={(node) => {
+              setSelectedNode(node);
+              setIsHistoryOpen(false);
+            }}
           />
         </div>
 
-        {/* Right Side: Properties, Terraform edit, Validation findings */}
-        <div className="bg-[#05070d] border-l border-white/5 flex flex-col overflow-y-auto max-h-[80vh]">
-          <div className="flex border-b border-white/5 text-xs font-mono">
-            {(["properties", "terraform", "validation"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveReviewTab(tab)}
-                className={`flex-1 py-3 text-center capitalize border-b-2 font-bold transition-all ${
-                  activeReviewTab === tab
-                    ? "border-cyan-500 text-white bg-slate-900/40"
-                    : "border-transparent text-slate-400 hover:text-white"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+        {/* Collapsible Slide-Over Right Drawer: Properties / History */}
+        <div 
+          className={`absolute top-0 right-0 h-full w-96 bg-[#05070d]/95 border-l border-white/5 z-30 flex flex-col overflow-y-auto transition-transform duration-300 shadow-2xl backdrop-blur-xl ${
+            (selectedNode || isHistoryOpen) ? "translate-x-0" : "translate-x-full"
+          }`}
+        >
+          <div className="p-4 border-b border-white/5 flex items-center justify-between">
+            <span className="text-xs font-bold font-mono text-cyan-400 uppercase tracking-widest">
+              {selectedNode ? "Resource Configurations" : "Version Snapshots"}
+            </span>
+            <button 
+              onClick={() => {
+                setSelectedNode(null);
+                setIsHistoryOpen(false);
+              }} 
+              className="text-[10px] font-mono text-slate-400 hover:text-white border border-white/10 px-2 py-0.5 rounded bg-white/5"
+            >
+              Close Drawer
+            </button>
           </div>
 
-          <div className="p-4 flex-1">
-            {activeReviewTab === "properties" && (
+          <div className="p-5 flex-grow">
+            {selectedNode ? (
+              <ServiceConfigPanel 
+                node={selectedNode} 
+                onUpdateNode={handleUpdateNode} 
+                onClose={() => setSelectedNode(null)} 
+              />
+            ) : isHistoryOpen ? (
               <div className="space-y-4">
-                {selectedNode ? (
-                  <ServiceConfigPanel node={selectedNode} onUpdateNode={handleUpdateNode} onClose={() => setSelectedNode(null)} />
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-white/5 bg-[#070b13] p-6 text-center">
-                    <Edit3 className="w-8 h-8 text-slate-500 mx-auto mb-3" />
-                    <h4 className="text-xs font-bold text-slate-300">No Resource Selected</h4>
-                    <p className="text-[10px] text-slate-500 mt-1">Double click any visual node on the canvas to configure properties.</p>
-                  </div>
-                )}
-                
-                {/* Visual statistics */}
-                <div className="glass-card p-4 rounded-xl mt-4 space-y-2 font-mono text-[10px]">
-                  <div className="flex justify-between pb-1.5 border-b border-white/5">
-                    <span className="text-slate-400">Billing Limit Target</span>
-                    <span className="text-white font-bold">${monthlyBudget}/mo</span>
-                  </div>
-                  <div className="flex justify-between pb-1.5 border-b border-white/5">
-                    <span className="text-slate-400">Availability Target</span>
-                    <span className="text-emerald-400 font-bold">HA Multi-Zone</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Compliance Benchmark</span>
-                    <span className="text-cyan-400 font-bold">SOC2 / ISO</span>
-                  </div>
-                </div>
-
-                {/* Version history snapshots */}
-                {activeProjectId && projectVersions.length > 0 && (
-                  <div className="glass-card p-4 rounded-xl mt-4 space-y-3 font-mono text-[10px]">
-                    <span className="text-slate-400 font-bold uppercase tracking-wider block">Version Snapshots</span>
-                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                {activeProjectId && projectVersions.length > 0 ? (
+                  <div className="space-y-3 font-mono text-[10px]">
+                    <span className="text-slate-400 font-bold uppercase tracking-wider block">Workspace Snapshots</span>
+                    <div className="space-y-2 max-h-[75vh] overflow-y-auto pr-1">
                       {projectVersions.map((v) => (
-                        <div key={v.version_id} className="flex justify-between items-center p-2 rounded bg-slate-950/40 border border-white/5">
+                        <div key={v.version_id} className="flex justify-between items-center p-3 rounded-lg bg-slate-950/40 border border-white/5">
                           <div>
                             <span className="text-cyan-400 font-bold block">{v.version_id}</span>
                             <span className="text-[8px] text-slate-500 block">
@@ -696,7 +705,13 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-slate-300 font-bold">${v.cost_estimate}/mo</span>
-                            <button onClick={() => handleRollback(v.version_id)} className="px-2 py-0.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-400 hover:text-slate-950 font-mono text-[9px] rounded border border-cyan-500/30 transition">
+                            <button 
+                              onClick={() => {
+                                handleRollback(v.version_id);
+                                setIsHistoryOpen(false);
+                              }} 
+                              className="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-400 hover:text-slate-950 font-mono text-[9px] rounded border border-cyan-500/30 transition"
+                            >
                               Restore
                             </button>
                           </div>
@@ -704,31 +719,15 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <History className="w-8 h-8 text-slate-500 mx-auto mb-3" />
+                    <h4 className="text-xs font-bold text-slate-300">No Snapshots Found</h4>
+                    <p className="text-[10px] text-slate-500 mt-1">Version snapshots are created automatically when you click "Save Project".</p>
+                  </div>
                 )}
               </div>
-            )}
-
-            {activeReviewTab === "terraform" && (
-              <div className="h-full">
-                <TerraformPanel terraform={terraform} isLoading={tfLoading} onCodeChange={handleHclCodeChange} />
-              </div>
-            )}
-
-            {activeReviewTab === "validation" && (
-              <div className="space-y-4">
-                <SecurityPanel
-                  securityScore={architecture?.security_score ?? 85}
-                  findings={architecture?.security_findings ?? []}
-                  compliance={architecture?.compliance_checks ?? []}
-                />
-                <CostPanel
-                  costEstimate={architecture?.cost_estimate ?? 0}
-                  costBreakdown={architecture?.cost_breakdown ?? []}
-                  recommendations={architecture?.optimization_recommendations ?? []}
-                  costScore={85}
-                />
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -953,6 +952,7 @@ export default function DashboardPage() {
             <nav className="mt-8 space-y-1">
               {[
                 { tab: "dashboard", label: "Dashboard", icon: <LayoutGrid className="w-4 h-4" /> },
+                { tab: "generator", label: "Requirements Wizard", icon: <Sparkles className="w-4 h-4 text-cyan-400" /> },
                 { tab: "studio", label: "Architecture Studio", icon: <SquareStack className="w-4 h-4" /> },
                 { tab: "projects", label: "Saved Projects", icon: <FolderOpen className="w-4 h-4" /> },
                 { tab: "templates", label: "Blueprint Templates", icon: <Package className="w-4 h-4" /> },
@@ -1008,12 +1008,21 @@ export default function DashboardPage() {
           {/* Tab Content rendering */}
           <div className="flex-1 p-6 overflow-y-auto">
             {activeTab === "dashboard" && renderDashboardTab()}
+            {activeTab === "generator" && renderGeneratorTab()}
             {activeTab === "studio" && renderStudioTab()}
             {activeTab === "projects" && renderProjectsTab()}
             {activeTab === "templates" && renderTemplatesTab()}
             {activeTab === "terraform" && (
-              <div className="max-w-4xl glass-card p-6 rounded-3xl">
-                <TerraformPanel terraform={terraform} isLoading={tfLoading} onCodeChange={handleHclCodeChange} />
+              <div className="w-full h-[calc(100vh-140px)] glass-card p-6 rounded-3xl flex flex-col">
+                <div className="mb-4">
+                  <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                    <FileCode className="w-6 h-6 text-cyan-400" /> Terraform Infrastructure Workspace
+                  </h1>
+                  <p className="text-sm text-slate-400 mt-1">Bi-directional synchronization actively links changes in variables to canvas resources.</p>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <TerraformPanel terraform={terraform} isLoading={tfLoading} onCodeChange={handleHclCodeChange} />
+                </div>
               </div>
             )}
             {activeTab === "validation" && renderValidationTab()}
