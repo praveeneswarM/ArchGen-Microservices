@@ -4,8 +4,15 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "project_name" {
+  type        = string
+  description = "Project name to prefix resources"
+  default     = "archgen"
+}
+
 variable "db_password" {
   type        = string
   description = "Password for the RDS Database"
   sensitive   = true
 }
+

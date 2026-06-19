@@ -46,6 +46,69 @@ class TerraformEngine:
             has_frontend = any(n.get("type") == "FrontendNode" for n in nodes)
             has_database = any(n.get("type") == "DatabaseNode" for n in nodes)
 
+            # Extract custom configurations from nodes
+            import re
+            project_name_val = "archgen"
+            region_val = "eastus" if provider.lower() == "azure" else ("us-east-1" if provider.lower() == "aws" else "us-central1")
+            rg_val = "rg-production"
+            vnet_cidr_val = "10.0.0.0/16"
+            
+            subnet_cidrs = {
+                "subnet-ingress": "10.0.1.0/24",
+                "subnet-mgmt": "10.0.4.0/24",
+                "subnet-pe": "10.0.5.0/24",
+                "subnet-app": "10.0.2.0/24",
+                "subnet-data": "10.0.3.0/24"
+            }
+            
+            for node in nodes:
+                n_id = str(node.get("id", "")).lower()
+                n_type = str(node.get("type", ""))
+                label = str(node.get("data", {}).get("label", ""))
+                
+                if n_type == "RegionGroupNode" or n_id == "region-group":
+                    if "region:" in label.lower():
+                        region_val = label.split(":", 1)[1].strip()
+                    elif "cloud region:" in label.lower():
+                        region_val = label.split(":", 1)[1].strip()
+                    else:
+                        region_val = label.strip()
+                        
+                elif n_type == "ResourceGroupNode" or n_id == "rg-group":
+                    if "scope:" in label.lower():
+                        rg_val = label.split(":", 1)[1].strip()
+                    elif "resource group:" in label.lower():
+                        rg_val = label.split(":", 1)[1].strip()
+                    else:
+                        rg_val = label.strip()
+                        
+                elif n_type == "VNetGroupNode" or n_id == "vnet-group":
+                    vnet_split = re.split(r'vnet\):|vpc\):', label, flags=re.IGNORECASE)
+                    if len(vnet_split) > 1:
+                        vnet_cidr_val = vnet_split[1].strip()
+                    elif ":" in label:
+                        vnet_cidr_val = label.split(":", 1)[1].strip()
+                    else:
+                        vnet_cidr_val = label.strip()
+                    vnet_cidr_val = vnet_cidr_val.replace("[", "").replace("]", "").strip()
+                    
+                elif n_type == "SubnetGroupNode" or n_id.startswith("subnet-"):
+                    cidr_match = re.search(r"(\d+\.\d+\.\d+\.\d+/\d+)", label)
+                    if cidr_match:
+                        subnet_cidrs[n_id] = cidr_match.group(1)
+
+            # Sanitize project name
+            project_name_val = re.sub(r'[^a-zA-Z0-9-]', '', rg_val.replace("rg-", "") if rg_val.startswith("rg-") else rg_val).lower()
+            if not project_name_val:
+                project_name_val = "archgen"
+
+            # Sanitize region for clouds
+            region_clean = region_val.lower().strip()
+            if provider.lower() == "azure":
+                region_clean = region_clean.replace(" ", "")
+            else:
+                region_clean = region_clean.replace(" ", "-")
+
             # Map parameters
             context = {
                 "nodes": nodes,
@@ -55,6 +118,11 @@ class TerraformEngine:
                 "has_backend": has_backend,
                 "has_frontend": has_frontend,
                 "has_database": has_database,
+                "project_name": project_name_val,
+                "region": region_clean,
+                "resource_group": rg_val,
+                "vnet_cidr": vnet_cidr_val,
+                "subnet_cidrs": subnet_cidrs
             }
             
             provider_lower = provider.lower()

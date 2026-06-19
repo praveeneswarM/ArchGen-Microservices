@@ -5,7 +5,7 @@ provider "google" {
 
 # Base Network
 resource "google_compute_network" "vpc_network" {
-  name                    = "archgen-vpc"
+  name                    = "${var.gcp_project_id}-vpc"
   auto_create_subnetworks = false
 }
 
@@ -31,12 +31,14 @@ resource "google_compute_network" "vpc_network" {
 {% set safe_id = node.id | sanitize_id %}
 resource "google_compute_subnetwork" "{{ safe_id }}" {
   name          = "snet-{{ safe_id }}"
-  ip_cidr_range = {% if '10.0.1.' in node.data.label or 'ingress' in node.id %} "10.0.1.0/24"
-                  {% elif '10.0.2.' in node.data.label or 'app' in node.id %} "10.0.2.0/24"
-                  {% elif '10.0.3.' in node.data.label or 'data' in node.id %} "10.0.3.0/24"
-                  {% elif '10.0.4.' in node.data.label or 'mgmt' in node.id %} "10.0.4.0/24"
-                  {% elif '10.0.5.' in node.data.label or 'pe' in node.id %} "10.0.5.0/24"
-                  {% else %} "10.0.10.0/24"
+  ip_cidr_range = {% if node.id in subnet_cidrs %}"{{ subnet_cidrs[node.id] }}"
+                  {% elif (node.id | lower) in subnet_cidrs %}"{{ subnet_cidrs[node.id | lower] }}"
+                  {% elif 'ingress' in node.id %}"{{ subnet_cidrs['subnet-ingress'] }}"
+                  {% elif 'app' in node.id %}"{{ subnet_cidrs['subnet-app'] }}"
+                  {% elif 'data' in node.id %}"{{ subnet_cidrs['subnet-data'] }}"
+                  {% elif 'mgmt' in node.id %}"{{ subnet_cidrs['subnet-mgmt'] }}"
+                  {% elif 'pe' in node.id %}"{{ subnet_cidrs['subnet-pe'] }}"
+                  {% else %}"10.0.10.0/24"
                   {% endif %}
   region        = var.gcp_region
   network       = google_compute_network.vpc_network.id
@@ -46,7 +48,7 @@ resource "google_compute_subnetwork" "{{ safe_id }}" {
 {% else %}
 resource "google_compute_subnetwork" "subnetapp" {
   name          = "snet-app"
-  ip_cidr_range = "10.0.2.0/24"
+  ip_cidr_range = "{{ subnet_cidrs['subnet-app'] }}"
   region        = var.gcp_region
   network       = google_compute_network.vpc_network.id
 }
@@ -80,7 +82,7 @@ resource "google_compute_backend_service" "default_{{ safe_id }}" {
 {% elif node.type == 'FrontendNode' %}
 # Cloud Storage for Static Hosting
 resource "google_storage_bucket" "frontend_{{ safe_id }}" {
-  name          = "archgen-frontend-{{ safe_id }}"
+  name          = "${var.gcp_project_id}-frontend-{{ safe_id }}"
   location      = "US"
   force_destroy = true
   website {
@@ -160,7 +162,7 @@ resource "google_redis_instance" "default_{{ safe_id }}" {
 {% elif node.type == 'StorageNode' %}
 # Cloud Storage
 resource "google_storage_bucket" "storage_{{ safe_id }}" {
-  name          = "archgen-storage-{{ safe_id }}"
+  name          = "${var.gcp_project_id}-storage-{{ safe_id }}"
   location      = "US"
   force_destroy = true
 }
