@@ -32,6 +32,7 @@ CRITICAL INSTRUCTIONS:
     - Cache nodes MUST have an id starting with "cache" or "redis-" (e.g., "redis-cache", "redis", "redis-replica").
     - Key Vault nodes MUST have an id starting with "vault" or "keyvault-" (e.g., "keyvault", "pe-kv").
     - Compute/Backend services must be defined as "BackendNode" or "FrontendNode".
+11. CRITICAL TOKEN SAVING FORMAT: To prevent token limit truncation, do not include cost fields (cost, monthly_cost, estimated_monthly_cost) or boolean fields (public, private) inside the node "data" object. Only include the "style" object (width and height) for Group nodes (RegionGroupNode, ResourceGroupNode, VNetGroupNode, SubnetGroupNode) to size the container boxes; omit the "style" object entirely for standard resource nodes. The backend will automatically default and enrich these properties.
 
 Allowed Node types are:
 'GatewayNode', 'FrontendNode', 'BackendNode', 'DatabaseNode', 'CacheNode', 'StorageNode', 'MonitoringNode', 'SecurityNode', 'RegionGroupNode', 'ResourceGroupNode', 'VNetGroupNode', 'SubnetGroupNode'
@@ -43,7 +44,7 @@ Expected JSON Schema:
 {
   "nodes": [
     {
-      "id": "string (unique identifier)",
+      "id": "string",
       "type": "string",
       "label": "string",
       "parentNode": "string (parent container node ID)",
@@ -57,11 +58,6 @@ Expected JSON Schema:
       },
       "data": {
         "subnet": "string (subnet ID reference)",
-        "cost": "string (e.g. $45/month)",
-        "monthly_cost": "string (e.g. $45/month)",
-        "estimated_monthly_cost": number,
-        "public": boolean,
-        "private": boolean,
         "provider": "string",
         "resource_type": "string"
       }

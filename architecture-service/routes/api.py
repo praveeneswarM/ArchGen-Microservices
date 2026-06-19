@@ -169,10 +169,30 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     except Exception as pe:
         logger.warning(f"Failed to post-process node labels: {pe}")
         
-    # Ensure position exists to prevent frontend crash
+    # Ensure position, style, and data dictionary structures exist to prevent frontend crash
     for idx, node in enumerate(nodes):
         if 'position' not in node or not isinstance(node['position'], dict):
             node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+        
+        if 'style' not in node or not isinstance(node['style'], dict):
+            node['style'] = {}
+            
+        node['data'] = node.get('data') or {}
+        
+        if 'provider' not in node['data']:
+            node['data']['provider'] = provider
+        if 'subnet' not in node['data']:
+            node['data']['subnet'] = node.get('parentNode', '')
+        if 'resource_type' not in node['data']:
+            node['data']['resource_type'] = str(node.get('type', 'resource')).lower()
+        if 'cost' not in node['data']:
+            node['data']['cost'] = "~$25/mo"
+        if 'estimated_monthly_cost' not in node['data']:
+            node['data']['estimated_monthly_cost'] = 25.0
+        if 'public' not in node['data']:
+            node['data']['public'] = False
+        if 'private' not in node['data']:
+            node['data']['private'] = True
             
     budget_val = 500.0
     try:
