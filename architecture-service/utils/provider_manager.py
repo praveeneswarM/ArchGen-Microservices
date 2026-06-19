@@ -23,8 +23,8 @@ class ProviderManager:
     def _init_manager(self):
         self.provider_cache_ttl = 300
         self.last_check_time = 0
-        self.active_provider = 'Mock'
-        self.active_model = 'mock'
+        self.active_provider = 'None'
+        self.active_model = 'none'
         self.openai_client = None
         self.deepseek_client = None
         self.ollama_base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
@@ -118,9 +118,9 @@ class ProviderManager:
             self.last_check_time = now
             return self.active_provider
 
-        # 4. Mock
-        self.active_provider = 'Mock'
-        self.active_model = 'mock'
+        # No active provider
+        self.active_provider = 'None'
+        self.active_model = 'none'
         self.last_check_time = now
         return self.active_provider
 
@@ -166,14 +166,8 @@ class ProviderManager:
             except Exception as e:
                 logger.warning(f'Ollama generation failed: {e}')
 
-        # Fallback to Mock
-        if 'Mock' not in self.fallback_chain:
-            self.fallback_chain.append('Mock')
-        
-        self.active_provider = 'Mock'
-        self.active_model = 'mock'
-        self._log_telemetry(start_time, 'Mock', self.fallback_chain)
-        return OpenAIClient._generate_mock_response(system_prompt, user_prompt)
+        # Raise exception instead of falling back to Mock response
+        raise RuntimeError(f"No available LLM providers. Fallback chain attempted: {self.fallback_chain}")
 
     async def _call_openai(self, client, model, system, user, timeout):
         # OpenAI requires the word 'json' to be in the prompt when using response_format={'type': 'json_object'}

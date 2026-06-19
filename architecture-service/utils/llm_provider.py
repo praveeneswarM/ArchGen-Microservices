@@ -102,7 +102,7 @@ class ResilientProvider(AIProvider):
     def __init__(self, primary: AIProvider, secondary: Optional[AIProvider] = None, fallback: Optional[AIProvider] = None):
         self.primary = primary
         self.secondary = secondary
-        self.fallback = fallback or MockProvider()
+        self.fallback = fallback
         self.provider_name = getattr(primary, "provider_name", "Resilient")
         self.model_name = getattr(primary, "model_name", "unknown")
         self.last_active_provider = getattr(primary, "provider_name", "Resilient")
@@ -148,17 +148,23 @@ class ResilientProvider(AIProvider):
                 except Exception as secondary_error:
                     secondary_reason = self._classify_reason(secondary_error, getattr(self.secondary, "provider_name", "secondary"))
                     logger.warning(secondary_reason)
-                    self.last_active_provider = getattr(self.fallback, "provider_name", "Mock")
-                    self.last_active_model = getattr(self.fallback, "model_name", "mock")
-                    self.last_fallback_trigger = secondary_reason
-                    self._log_active(self.fallback, secondary_reason)
-                    return await self.fallback.generate_json(system_prompt, user_prompt, schema)
+                    if self.fallback is not None:
+                        self.last_active_provider = getattr(self.fallback, "provider_name", "Mock")
+                        self.last_active_model = getattr(self.fallback, "model_name", "mock")
+                        self.last_fallback_trigger = secondary_reason
+                        self._log_active(self.fallback, secondary_reason)
+                        return await self.fallback.generate_json(system_prompt, user_prompt, schema)
+                    else:
+                        raise RuntimeError(f"All providers failed. Primary: {primary_reason}. Secondary: {secondary_reason}") from secondary_error
 
-            self.last_active_provider = getattr(self.fallback, "provider_name", "Mock")
-            self.last_active_model = getattr(self.fallback, "model_name", "mock")
-            self.last_fallback_trigger = primary_reason
-            self._log_active(self.fallback, primary_reason)
-            return await self.fallback.generate_json(system_prompt, user_prompt, schema)
+            if self.fallback is not None:
+                self.last_active_provider = getattr(self.fallback, "provider_name", "Mock")
+                self.last_active_model = getattr(self.fallback, "model_name", "mock")
+                self.last_fallback_trigger = primary_reason
+                self._log_active(self.fallback, primary_reason)
+                return await self.fallback.generate_json(system_prompt, user_prompt, schema)
+            else:
+                raise RuntimeError(f"Primary provider failed and no fallback configured. Error: {primary_reason}") from primary_error
 
 
 def get_llm_provider() -> AIProvider:
@@ -168,10 +174,10 @@ def get_llm_provider() -> AIProvider:
     openai_available = bool(openai_key and not openai_key.startswith("your_") and len(openai_key) > 5)
 
     if provider_name == "ollama":
-        return ResilientProvider(primary=ollama_provider, fallback=MockProvider())
+        return ResilientProvider(primary=ollama_provider, fallback=None)
 
     if provider_name == "openai" or openai_available:
         openai_provider = OpenAIProvider()
-        return ResilientProvider(primary=openai_provider, secondary=ollama_provider, fallback=MockProvider())
+        return ResilientProvider(primary=openai_provider, secondary=ollama_provider, fallback=None)
 
-    return ResilientProvider(primary=ollama_provider, fallback=MockProvider())
+    return ResilientProvider(primary=ollama_provider, fallback=None)

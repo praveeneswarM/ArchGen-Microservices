@@ -62,112 +62,118 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             cached['execution_time_ms'] = exec_ms
             return ArchitectureResponse(**cached)
 
-    # 2. AI Architecture Generation
+    # 2. Deterministic Engine (Primary Generator)
     llm_client = request.app.state.provider_manager
     provider = requirements.cloud_provider.lower()
     
-    from agents.requirement_analysis import RequirementAnalysisAgent
-    from agents.architecture_planning import ArchitecturePlanningAgent
+    logger.info("Running Deterministic Engine as Primary Generator")
+    reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
+    workload = reasoning_engine.classify_workload(requirements.app_description, requirements.expected_users)
+    raw_topology = reasoning_engine.synthesize_from_intent()
+    topology = reasoning_engine.normalize_topology(raw_topology)
     
-    try:
-        req_agent = RequirementAnalysisAgent(client=llm_client)
-        plan_agent = ArchitecturePlanningAgent(client=llm_client)
-        
-        # Phase 1: Analyze Requirements
-        logger.info("Starting AI Requirement Analysis")
-        analysis = await req_agent.analyze(requirements)
-        
-        # Phase 2: Plan Visual Graph
-        logger.info("Starting AI Architecture Planning")
-        topology = await plan_agent.plan(analysis)
-        
-        nodes = topology.get('nodes', [])
-        edges = topology.get('edges', [])
-        services = topology.get('services', [])
-        
-        if not nodes:
-            raise Exception("AI generated empty node list")
-
-        # Post-process live LLM-generated topology to enforce user's custom inputs
+    nodes = topology.get('nodes', [])
+    edges = topology.get('edges', [])
+    services = topology.get('services', [])
+    
+    # 3. Optional AI Enhancement Layer
+    ai_enhanced = False
+    active_provider = getattr(llm_client, 'active_provider', 'None')
+    
+    if active_provider and active_provider.lower() not in ['none', 'mock']:
         try:
-            vnet_cidr_val = requirements.vnetCIDR or "10.0.0.0/16"
-            ip_prefix = "10.0"
-            match_cidr = re.match(r"^(\d+\.\d+)", vnet_cidr_val)
-            if match_cidr:
-                ip_prefix = match_cidr.group(1)
-
-            reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
-            compute_name = reasoning_engine.get_cloud_resource_name(requirements.computeType or "AKS")
-            db_name = reasoning_engine.get_cloud_resource_name(requirements.database_type or "PostgreSQL")
-
-            for node in nodes:
-                n_id = str(node.get("id", "")).lower()
-                n_type = str(node.get("type", ""))
-                
-                # A. Update Region Node Label
-                if n_type == "RegionGroupNode" or "region" in n_id:
-                    node["data"] = node.get("data") or {}
-                    node["data"]["label"] = f"Cloud Region: {requirements.region.upper() if requirements.region else 'EAST US'}"
-                    
-                # B. Update Resource Group Node Label
-                elif n_type == "ResourceGroupNode" or "rg-" in n_id or n_id == "rg-group":
-                    node["data"] = node.get("data") or {}
-                    node["data"]["label"] = f"Resource Scope: {requirements.resourceGroup or 'rg-production'}"
-                    
-                # C. Update Virtual Network Node Label
-                elif n_type == "VNetGroupNode" or "vnet" in n_id or "vpc" in n_id:
-                    node["data"] = node.get("data") or {}
-                    node["data"]["label"] = f"Virtual Network (VPC): {vnet_cidr_val}"
-                    
-                # D. Update Subnet Node Labels
-                elif n_type == "SubnetGroupNode" or "subnet" in n_id:
-                    node["data"] = node.get("data") or {}
-                    lbl = str(node["data"].get("label", "")).lower()
-                    if "ingress" in n_id or "ingress" in lbl:
-                        node["data"]["label"] = f"Ingress Subnet ({ip_prefix}.1.0/24)"
-                    elif "mgmt" in n_id or "mgmt" in lbl or "management" in lbl:
-                        node["data"]["label"] = f"Management Subnet ({ip_prefix}.4.0/24)"
-                    elif "pe" in n_id or "pe" in lbl or "private endpoint" in lbl or "private-endpoint" in lbl:
-                        node["data"]["label"] = f"Private Endpoint Subnet ({ip_prefix}.5.0/24)"
-                    elif "app" in n_id or "app" in lbl or "application" in lbl:
-                        node["data"]["label"] = f"Application Subnet ({ip_prefix}.2.0/24)"
-                    elif "data" in n_id or "data" in lbl or "database" in lbl:
-                        node["data"]["label"] = f"Data Subnet ({ip_prefix}.3.0/24)"
-                        
-                # E. Update Compute engine Node Label
-                elif "aks" in n_id or "compute" in n_id or "cluster" in n_id or n_id == "aks-cluster":
-                    node["data"] = node.get("data") or {}
-                    node["data"]["label"] = f"{compute_name} Engine"
-                    
-                # F. Update Primary/Replica DB Node Labels
-                elif n_id == "db-primary" or n_id == "database" or (n_type == "DatabaseNode" and "replica" not in n_id):
-                    node["data"] = node.get("data") or {}
-                    node["data"]["label"] = db_name
-                    
-                elif n_id == "db-replica" or (n_type == "DatabaseNode" and "replica" in n_id):
-                    node["data"] = node.get("data") or {}
-                    node["data"]["label"] = f"{db_name} Replica"
-        except Exception as pe:
-            logger.warning(f"Failed to post-process live node labels: {pe}")
+            from agents.requirement_analysis import RequirementAnalysisAgent
+            from agents.architecture_planning import ArchitecturePlanningAgent
             
-        # Ensure position exists to prevent frontend crash
-        for idx, node in enumerate(nodes):
-            if 'position' not in node or not isinstance(node['position'], dict):
-                node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+            req_agent = RequirementAnalysisAgent(client=llm_client)
+            plan_agent = ArchitecturePlanningAgent(client=llm_client)
             
-    except Exception as e:
-        logger.warning(f"AI Generation Failed: {e}. Falling back to deterministic engine.")
+            logger.info("Starting AI Requirement Analysis (Optional AI Enhancement)")
+            analysis = await req_agent.analyze(requirements)
+            
+            logger.info("Starting AI Architecture Planning (Optional AI Enhancement)")
+            ai_topology = await plan_agent.plan(analysis)
+            
+            ai_nodes = ai_topology.get('nodes', [])
+            ai_edges = ai_topology.get('edges', [])
+            ai_services = ai_topology.get('services', [])
+            
+            if ai_nodes:
+                nodes = ai_nodes
+                edges = ai_edges
+                services = ai_services
+                ai_enhanced = True
+                logger.info("AI Enhancement successfully generated topology via AI agents")
+        except Exception as e:
+            logger.warning(f"AI Enhancement failed to plan: {e}. Keeping deterministic baseline.")
+
+    # Post-process live/enhanced/deterministic topology to enforce user's custom inputs
+    try:
+        vnet_cidr_val = requirements.vnetCIDR or "10.0.0.0/16"
+        ip_prefix = "10.0"
+        match_cidr = re.match(r"^(\d+\.\d+)", vnet_cidr_val)
+        if match_cidr:
+            ip_prefix = match_cidr.group(1)
+
         reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
-        workload = reasoning_engine.classify_workload(requirements.app_description, requirements.expected_users)
-        raw_topology = reasoning_engine.synthesize_from_intent()
-        topology = reasoning_engine.normalize_topology(raw_topology)
+        compute_name = reasoning_engine.get_cloud_resource_name(requirements.computeType or "AKS")
+        db_name = reasoning_engine.get_cloud_resource_name(requirements.database_type or "PostgreSQL")
+
+        for node in nodes:
+            n_id = str(node.get("id", "")).lower()
+            n_type = str(node.get("type", ""))
+            
+            # A. Update Region Node Label
+            if n_type == "RegionGroupNode" or "region" in n_id:
+                node["data"] = node.get("data") or {}
+                node["data"]["label"] = f"Cloud Region: {requirements.region.upper() if requirements.region else 'EAST US'}"
+                
+            # B. Update Resource Group Node Label
+            elif n_type == "ResourceGroupNode" or "rg-" in n_id or n_id == "rg-group":
+                node["data"] = node.get("data") or {}
+                node["data"]["label"] = f"Resource Scope: {requirements.resourceGroup or 'rg-production'}"
+                
+            # C. Update Virtual Network Node Label
+            elif n_type == "VNetGroupNode" or "vnet" in n_id or "vpc" in n_id:
+                node["data"] = node.get("data") or {}
+                node["data"]["label"] = f"Virtual Network (VPC): {vnet_cidr_val}"
+                
+            # D. Update Subnet Node Labels
+            elif n_type == "SubnetGroupNode" or "subnet" in n_id:
+                node["data"] = node.get("data") or {}
+                lbl = str(node["data"].get("label", "")).lower()
+                if "ingress" in n_id or "ingress" in lbl:
+                    node["data"]["label"] = f"Ingress Subnet ({ip_prefix}.1.0/24)"
+                elif "mgmt" in n_id or "mgmt" in lbl or "management" in lbl:
+                    node["data"]["label"] = f"Management Subnet ({ip_prefix}.4.0/24)"
+                elif "pe" in n_id or "pe" in lbl or "private endpoint" in lbl or "private-endpoint" in lbl:
+                    node["data"]["label"] = f"Private Endpoint Subnet ({ip_prefix}.5.0/24)"
+                elif "app" in n_id or "app" in lbl or "application" in lbl:
+                    node["data"]["label"] = f"Application Subnet ({ip_prefix}.2.0/24)"
+                elif "data" in n_id or "data" in lbl or "database" in lbl:
+                    node["data"]["label"] = f"Data Subnet ({ip_prefix}.3.0/24)"
+                    
+            # E. Update Compute engine Node Label
+            elif "aks" in n_id or "compute" in n_id or "cluster" in n_id or n_id == "aks-cluster":
+                node["data"] = node.get("data") or {}
+                node["data"]["label"] = f"{compute_name} Engine"
+                
+            # F. Update Primary/Replica DB Node Labels
+            elif n_id == "db-primary" or n_id == "database" or (n_type == "DatabaseNode" and "replica" not in n_id):
+                node["data"] = node.get("data") or {}
+                node["data"]["label"] = db_name
+                
+            elif n_id == "db-replica" or (n_type == "DatabaseNode" and "replica" in n_id):
+                node["data"] = node.get("data") or {}
+                node["data"]["label"] = f"{db_name} Replica"
+    except Exception as pe:
+        logger.warning(f"Failed to post-process node labels: {pe}")
         
-        nodes = topology['nodes']
-        edges = topology['edges']
-        services = topology['services']
-        
-        llm_client.active_provider = 'deterministic'
-        
+    # Ensure position exists to prevent frontend crash
+    for idx, node in enumerate(nodes):
+        if 'position' not in node or not isinstance(node['position'], dict):
+            node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+            
     budget_val = 500.0
     try:
         budget_str = re.sub(r'[^\d.]', '', requirements.monthly_budget)
@@ -181,32 +187,35 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     # Defaults
     cost_res, complexity_res, secured_res, explanation_res = {}, {}, {}, {}
 
-    # 3. Optional AI Enrichment
-    try:
-        security_agent = SecurityOptimizationAgent(client=llm_client)
-        complexity_agent = ComplexityAuditorAgent(client=llm_client)
-        cost_agent = CostOptimizationAgent(client=llm_client)
-        explanation_agent = ArchitectureExplanationAgent(client=llm_client)
+    # 4. Optional AI Enrichment
+    if active_provider and active_provider.lower() not in ['none', 'mock']:
+        try:
+            security_agent = SecurityOptimizationAgent(client=llm_client)
+            complexity_agent = ComplexityAuditorAgent(client=llm_client)
+            cost_agent = CostOptimizationAgent(client=llm_client)
+            explanation_agent = ArchitectureExplanationAgent(client=llm_client)
 
-        async def run_enrichments():
-            return await asyncio.gather(
-                security_agent.optimize_security(eval_plan, requirements.app_description),
-                complexity_agent.audit(eval_plan, requirements.app_description),
-                cost_agent.optimize(eval_plan, requirements.app_description),
-                explanation_agent.explain(eval_plan, requirements.model_dump())
-            )
+            async def run_enrichments():
+                return await asyncio.gather(
+                    security_agent.optimize_security(eval_plan, requirements.app_description),
+                    complexity_agent.audit(eval_plan, requirements.app_description),
+                    cost_agent.optimize(eval_plan, requirements.app_description),
+                    explanation_agent.explain(eval_plan, requirements.model_dump())
+                )
 
-        # 120 seconds max enrichment time to account for rate limit retries
-        secured_res, complexity_res, cost_res, explanation_res = await asyncio.wait_for(run_enrichments(), timeout=120.0)
-    except Exception as e:
-        logger.warning(f'Enrichment failed or timed out: {e}')
+            # 120 seconds max enrichment time to account for rate limit retries
+            secured_res, complexity_res, cost_res, explanation_res = await asyncio.wait_for(run_enrichments(), timeout=120.0)
+        except Exception as e:
+            logger.warning(f'Optional AI Enrichment failed or timed out: {e}')
 
     terraform_modules = list(set([n.get('type', 'Module') for n in nodes]))
 
     end_time = asyncio.get_event_loop().time()
     exec_ms = int((end_time - start_time) * 1000)
     
-    # 4. Architecture Quality Gate
+    # 5. Architecture Quality Gate (Non-blocking Validation)
+    validation_findings = []
+    
     node_ids = set(n.get("id") for n in nodes)
     node_labels = set(str(n.get("data", {}).get("label", "")).lower() for n in nodes)
     node_types = set(n.get("type") for n in nodes)
@@ -214,81 +223,79 @@ async def generate_architecture(requirements: RequirementInput, request: Request
 
     # Validate node count
     if len(nodes) < 25:
-        logger.error(f"Quality Gate Failed: Node count {len(nodes)} is less than 25.")
-        raise HTTPException(status_code=500, detail=f"Quality Gate Failed: Node count ({len(nodes)}) is less than 25.")
+        validation_findings.append(f"Quality Gate: Node count {len(nodes)} is less than 25.")
 
     # Validate edge count
     if len(edges) < 35:
-        logger.error(f"Quality Gate Failed: Edge count {len(edges)} is less than 35.")
-        raise HTTPException(status_code=500, detail=f"Quality Gate Failed: Edge count ({len(edges)}) is less than 35.")
+        validation_findings.append(f"Quality Gate: Edge count {len(edges)} is less than 35.")
 
     # Validate VNet exists
     has_vnet = "VNetGroupNode" in node_types or any("vnet" in nid.lower() or "vpc" in nid.lower() for nid in node_ids)
     if not has_vnet:
-        logger.error("Quality Gate Failed: VNet/VPC group node is missing.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: VNet/VPC group node is missing.")
+        validation_findings.append("Quality Gate: VNet/VPC group node is missing.")
 
     # Validate all selected subnets exist (Ingress, App, Data, Mgmt, PE)
     required_subnets = ["ingress", "app", "data", "mgmt", "pe"]
     existing_subnets = [nid.lower() for nid in node_ids if "subnet" in nid.lower() or "snet" in nid.lower()]
     for rs in required_subnets:
         if not any(rs in es for es in existing_subnets):
-            logger.error(f"Quality Gate Failed: Subnet '{rs}' is missing.")
-            raise HTTPException(status_code=500, detail=f"Quality Gate Failed: Subnet '{rs}' is missing.")
+            validation_findings.append(f"Quality Gate: Subnet '{rs}' is missing.")
 
-    # Validate NSGs exist (NSGs should cover subnets or be represented as nodes with 'nsg' or 'security group' or 'firewall' in label/id)
+    # Validate NSGs exist
     has_nsg = any("nsg" in nid.lower() or "security group" in nid.lower() or "firewall" in nid.lower() or "nsg" in lbl or "security group" in lbl for nid, lbl in zip(node_ids, node_labels))
     if not has_nsg:
-        logger.error("Quality Gate Failed: NSG/Security Group resources are missing.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: NSG/Security Group resources are missing.")
+        validation_findings.append("Quality Gate: NSG/Security Group resources are missing.")
 
     # Validate Route Tables exist
     has_rt = any("route table" in lbl or "rt-" in nid.lower() or "-rt" in nid.lower() or "route-table" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
     if not has_rt:
-        logger.error("Quality Gate Failed: Route Table resources are missing.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Route Table resources are missing.")
+        validation_findings.append("Quality Gate: Route Table resources are missing.")
 
     # Validate Monitoring exists
     has_monitoring = any(t == "MonitoringNode" or "monitor" in nid.lower() or "insights" in nid.lower() or "analytics" in nid.lower() for nid, t in zip(node_ids, node_types))
     if not has_monitoring:
-        logger.error("Quality Gate Failed: Monitoring resources are missing.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Monitoring resources are missing.")
+        validation_findings.append("Quality Gate: Monitoring resources are missing.")
 
     # Validate Backup exists
     has_backup = any("backup" in nid.lower() or "recovery" in nid.lower() or "vault" in nid.lower() and "key" not in nid.lower() for nid in node_ids)
     if not has_backup:
-        logger.error("Quality Gate Failed: Backup Vault/Recovery resources are missing.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Backup Vault/Recovery resources are missing.")
+        validation_findings.append("Quality Gate: Backup Vault/Recovery resources are missing.")
 
     # Validate Private Endpoints exist
     has_pe = any("pe-" in nid.lower() or "private endpoint" in lbl or "private-endpoint" in lbl or "pe_" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
     if not has_pe:
-        logger.error("Quality Gate Failed: Private Endpoint resources are missing.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Private Endpoint resources are missing.")
+        validation_findings.append("Quality Gate: Private Endpoint resources are missing.")
 
     # Validate Security resources exist (e.g. Key Vault)
     has_security = any(t == "SecurityNode" or "vault" in nid.lower() or "key" in nid.lower() for nid, t in zip(node_ids, node_types))
     if not has_security:
-        logger.error("Quality Gate Failed: Security vault/secrets resources are missing.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Security vault/secrets resources are missing.")
+        validation_findings.append("Quality Gate: Security vault/secrets resources are missing.")
         
-    generation_source = f"ai_generated+{getattr(llm_client, 'active_provider', 'ollama').lower()}"
+    # Combine findings with Auditor Warnings
+    warnings_list = complexity_res.get('warnings', [])
+    if validation_findings:
+        warnings_list = validation_findings + warnings_list
+
+    # Determine provider/model names to return (never return mock)
+    active_provider_val = active_provider if ai_enhanced else 'deterministic'
+    active_model_val = getattr(llm_client, 'active_model', 'Deterministic Engine') if ai_enhanced else 'Deterministic Engine'
+    generation_source = f"deterministic+{active_provider_val.lower()}"
 
     resp_dict = {
         'nodes': nodes,
         'edges': edges,
         'services': services,
         'cloud_provider': provider,
-        'active_provider': getattr(llm_client, 'active_provider', 'Deterministic'),
-        'active_model': getattr(llm_client, 'active_model', 'Deterministic'),
-        'fallback_trigger': getattr(llm_client, 'fallback_trigger', 'none'),
+        'active_provider': active_provider_val,
+        'active_model': active_model_val,
+        'fallback_trigger': getattr(llm_client, 'fallback_trigger', 'none') if ai_enhanced else 'none',
         'cost_estimate': float(cost_res.get('estimated_monthly_cost', budget_val * 0.8)),
         'cost_breakdown': cost_res.get('cost_breakdown', []),
         'optimization_recommendations': cost_res.get('optimization_recommendations', []),
         'complexity_score': int(complexity_res.get('complexity_score', 45)),
         'operational_overhead_score': int(complexity_res.get('operational_overhead_score', 30)),
         'overengineered': bool(complexity_res.get('overengineered', False)),
-        'warnings': complexity_res.get('warnings', []),
+        'warnings': warnings_list,
         'security_score': int(secured_res.get('security_score', 85)),
         'security_findings': secured_res.get('security_findings', []),
         'compliance_checks': secured_res.get('compliance_checks', []),
