@@ -25,7 +25,7 @@ CRITICAL INSTRUCTIONS:
 5. For databases, caches, and storage, generate primary and standby replication nodes: `db-primary`, `db-replica`, `db-backup-policy`, `redis`, `redis-replica`, `storage-account`, `storage-replica`, `blob-container`.
 6. For Private Endpoints, place dedicated PE nodes in `subnet-pe` (`pe-db`, `pe-redis`, `pe-storage`, `pe-kv`) and connect them.
 7. For security and monitoring, generate: `keyvault`, `managed-identity`, `role-assignment`, `firewall-policy`, `log-analytics`, `app-insights`, `azure-monitor`, `alerts`, `diagnostic-settings`, `backup-vault`, `recovery-vault`.
-8. The output must represent a complete topology containing at least 25 nodes (preferred 35-50 nodes) and at least 35 edges (preferred 50+ edges) to pass the Architecture Quality Gate.
+8. The output must represent a complete topology containing between 25 and 28 nodes and between 35 and 38 edges to satisfy the Architecture Quality Gate. Do not exceed 28 nodes and 38 edges to prevent token limits.
 9. Node coordinates (`position.x`, `position.y`) for resources MUST be relative coordinates inside their parent subnet container. Keep them offset from (0,0) (e.g. x: 30, y: 60).
 10. CRITICAL TERRAFORM CONVENTIONS: The infrastructure compiler requires specific Node IDs to bind variables correctly:
     - Database nodes MUST have an id starting with "database" or "db-" (e.g., "db-postgres", "db-primary", "db-replica").
