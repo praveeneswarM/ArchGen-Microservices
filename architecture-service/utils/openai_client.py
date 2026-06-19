@@ -105,8 +105,8 @@ class OpenAIClient:
                 "extracted_requirements": reqs
             }
             
-        # B. Architecture Reasoning Mock
-        elif "architecturereasoningagent" in system_prompt.lower() or "architecture reasoning" in system_prompt.lower():
+        # B. Architecture Reasoning / Planning Mock
+        elif "architectureplanningagent" in system_prompt.lower() or "architecture planning" in system_prompt.lower() or "architecturereasoningagent" in system_prompt.lower() or "architecture reasoning" in system_prompt.lower():
             # Dynamically assemble visual nodes based on descriptions
             nodes = [
                 {"id": "gateway", "type": "GatewayNode", "data": {"label": "API Secure ingress", "status": "active"}, "position": {"x": 100, "y": 200}},
