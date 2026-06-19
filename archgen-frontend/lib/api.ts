@@ -112,7 +112,7 @@ export async function generateArchitecture(
   log("Generating architecture", input);
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds timeout
+  const timeoutId = setTimeout(() => controller.abort(), 150000); // 150 seconds timeout
   
   try {
     const response = await fetch(`${API_BASE_URL}/api/generate-architecture`, {
