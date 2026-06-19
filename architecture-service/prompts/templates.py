@@ -19,11 +19,11 @@ CRITICAL INSTRUCTIONS:
      * "subnet-pe" (Private Endpoint Subnet, x: 1820, y: 60, width: 900, height: 600)
      * "subnet-app" (Application Subnet, x: 40, y: 720, width: 2680, height: 400)
      * "subnet-data" (Data Subnet, x: 40, y: 1160, width: 2680, height: 400)
-2. Every subnet MUST contain its own Network Security Group (NSG) and Route Table (RT) node (e.g. `nsg-ingress`, `rt-ingress` inside `subnet-ingress`).
+2. Every subnet MUST contain its own Network Security Group (NSG) and Route Table (RT) node (e.g. `nsg-ingress`, `rt-ingress` inside `subnet-ingress`; `nsg-mgmt`, `rt-mgmt` inside `subnet-mgmt`; `nsg-pe`, `rt-pe` inside `subnet-pe`; `nsg-app`, `rt-app` inside `subnet-app`; `nsg-data`, `rt-data` inside `subnet-data`).
 3. For public edge traffic routing, generate: `internet` -> `front-door` -> `ddos-protection` -> `waf-policy` -> `app-gateway` -> `azure-firewall`.
-4. For AKS compute workloads, expand the cluster into distinct nodes: `aks-cluster`, `aks-system-node-pool`, `aks-user-node-pool`, `aks-ingress-controller`, `svc-api-gateway` and microservice BackendNodes (`svc-auth`, `svc-projects`, `svc-architecture`, etc.) inside `subnet-app`.
-5. For databases, caches, and storage, generate primary and standby replication nodes: `db-primary`, `db-replica`, `db-backup-policy`, `redis`, `redis-replica`, `storage-account`, `storage-replica`, `blob-container`.
-6. For Private Endpoints, place dedicated PE nodes in `subnet-pe` (`pe-db`, `pe-redis`, `pe-storage`, `pe-kv`) and connect them.
+4. For AKS compute workloads, expand the cluster into distinct nodes: `aks-cluster`, `aks-system-node-pool`, `aks-user-node-pool`, `aks-ingress-controller`, `svc-api-gateway` and the exact microservice BackendNodes (`svc-auth`, `svc-product`, `svc-order`, `svc-payment`, `svc-inventory`, `svc-notification`) inside `subnet-app`.
+5. For databases, caches, and storage, generate primary and standby replication nodes: `db-primary`, `db-replica`, `db-backup-policy`, `redis`, `redis-replica`, `storage-account`, `storage-replica`, `blob-container`. All database, cache, and storage resources (except Private Endpoints) MUST live inside "subnet-data".
+6. For Private Endpoints, place dedicated PE nodes in "subnet-pe" ("pe-db", "pe-redis", "pe-storage", "pe-kv") and connect them. Private Endpoints must never live in any other subnet.
 7. For security and monitoring, generate: `keyvault`, `managed-identity`, `role-assignment`, `firewall-policy`, `log-analytics`, `app-insights`, `azure-monitor`, `alerts`, `diagnostic-settings`, `backup-vault`, `recovery-vault`.
 8. Generate only the necessary production infrastructure nodes and edges required for the workload. Do NOT generate duplicate or redundant components (like multiple identical compute pools or vaults) unless required for high availability (like primary and replica database/cache standbys). Keep the total node count compact (typically between 12 and 25 nodes, do not exceed 30 nodes) to prevent token limits.
 9. Node coordinates (`position.x`, `position.y`) for resources MUST be relative coordinates inside their parent subnet container. Keep them offset from (0,0) (e.g. x: 30, y: 60).
@@ -33,6 +33,8 @@ CRITICAL INSTRUCTIONS:
     - Key Vault nodes MUST have an id starting with "vault" or "keyvault-" (e.g., "keyvault", "pe-kv").
     - Compute/Backend services must be defined as "BackendNode" or "FrontendNode".
 11. CRITICAL TOKEN SAVING FORMAT: To prevent token limit truncation, do not include cost fields (cost, monthly_cost, estimated_monthly_cost) or boolean fields (public, private) inside the node "data" object. Only include the "style" object (width and height) for Group nodes (RegionGroupNode, ResourceGroupNode, VNetGroupNode, SubnetGroupNode) to size the container boxes; omit the "style" object entirely for standard resource nodes. The backend will automatically default and enrich these properties.
+12. METADATA NORMALIZATION: Do not apply container or pricing metadata (pricingTier, minReplicas, maxReplicas, forceHttps) inside customMetadata to Key Vault, NSGs, Route Tables, Private Endpoints, Role Assignments, etc.
+13. UNIQUE SERVICE REGISTRY: Replicate unique service registry entries. Do not register AKS Cluster, System Node Pool, User Node Pool and Ingress Controller under the same generic service name. Each resource must have a unique name and service entry in the registry.
 
 Allowed Node types are:
 'GatewayNode', 'FrontendNode', 'BackendNode', 'DatabaseNode', 'CacheNode', 'StorageNode', 'MonitoringNode', 'SecurityNode', 'RegionGroupNode', 'ResourceGroupNode', 'VNetGroupNode', 'SubnetGroupNode'

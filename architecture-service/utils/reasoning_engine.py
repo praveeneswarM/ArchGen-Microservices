@@ -402,11 +402,12 @@ class InfrastructureReasoningEngine:
         
         # Deploy microservices inside the App Subnet (representing AKS Deployments/Pods)
         add_nested_node("svc-api-gateway", "GatewayNode", "API Gateway Controller", 640, 180, "subnet-app", "api_gateway_service", 40, is_public=False)
-        add_nested_node("svc-auth", "BackendNode", "Auth Identity Service", 960, 60, "subnet-app", "auth_microservice", 40, is_public=False)
-        add_nested_node("svc-projects", "BackendNode", "Projects Core API", 960, 180, "subnet-app", "projects_microservice", 40, is_public=False)
-        add_nested_node("svc-architecture", "BackendNode", "Architecture Logic Service", 1280, 60, "subnet-app", "architecture_microservice", 40, is_public=False)
-        add_nested_node("svc-notification", "BackendNode", "Notification Service", 1280, 180, "subnet-app", "notification_microservice", 30, is_public=False)
-        add_nested_node("svc-reporting", "BackendNode", "Reporting Service", 1600, 60, "subnet-app", "reporting_microservice", 30, is_public=False)
+        add_nested_node("svc-auth", "BackendNode", "Auth Service", 960, 60, "subnet-app", "auth_microservice", 40, is_public=False)
+        add_nested_node("svc-product", "BackendNode", "Product Service", 960, 180, "subnet-app", "product_microservice", 40, is_public=False)
+        add_nested_node("svc-order", "BackendNode", "Order Service", 1280, 60, "subnet-app", "order_microservice", 40, is_public=False)
+        add_nested_node("svc-payment", "BackendNode", "Payment Service", 1280, 180, "subnet-app", "payment_microservice", 40, is_public=False)
+        add_nested_node("svc-inventory", "BackendNode", "Inventory Service", 1600, 60, "subnet-app", "inventory_microservice", 40, is_public=False)
+        add_nested_node("svc-notification", "BackendNode", "Notification Service", 1600, 180, "subnet-app", "notification_microservice", 30, is_public=False)
 
         # Connect ingress to compute
         add_edge("azure-firewall", "aks-ingress-controller", True)
@@ -416,10 +417,11 @@ class InfrastructureReasoningEngine:
 
         # Microservice communication edges
         add_edge("svc-api-gateway", "svc-auth", True)
-        add_edge("svc-api-gateway", "svc-projects", True)
-        add_edge("svc-api-gateway", "svc-architecture", True)
+        add_edge("svc-api-gateway", "svc-product", True)
+        add_edge("svc-api-gateway", "svc-order", True)
+        add_edge("svc-api-gateway", "svc-payment", True)
+        add_edge("svc-api-gateway", "svc-inventory", True)
         add_edge("svc-api-gateway", "svc-notification", True)
-        add_edge("svc-api-gateway", "svc-reporting", True)
 
         # --- 6. Data Layer Expansion (PostgreSQL, HA standby, Redis, Storage) ---
         add_nested_node("db-primary", "DatabaseNode", self.get_cloud_resource_name("postgresql"), 320, 60, "subnet-data", "azurerm_postgresql_flexible_server", 115, is_public=False)
@@ -468,10 +470,12 @@ class InfrastructureReasoningEngine:
 
         # Microservice Private Link consumption routes
         add_edge("svc-auth", "pe-kv", True)
-        add_edge("svc-projects", "pe-db", True)
-        add_edge("svc-architecture", "pe-db", True)
-        add_edge("svc-projects", "pe-redis", True)
-        add_edge("svc-reporting", "pe-storage", True)
+        add_edge("svc-product", "pe-db", True)
+        add_edge("svc-order", "pe-db", True)
+        add_edge("svc-payment", "pe-db", True)
+        add_edge("svc-inventory", "pe-db", True)
+        add_edge("svc-product", "pe-redis", True)
+        add_edge("svc-notification", "pe-storage", True)
 
         # Backup vault links
         add_edge("db-primary", "backup-vault", False)
@@ -497,9 +501,11 @@ class InfrastructureReasoningEngine:
         
         # APM Trace links from microservices
         add_edge("svc-auth", "app-insights", False)
-        add_edge("svc-projects", "app-insights", False)
-        add_edge("svc-architecture", "app-insights", False)
-        add_edge("svc-reporting", "app-insights", False)
+        add_edge("svc-product", "app-insights", False)
+        add_edge("svc-order", "app-insights", False)
+        add_edge("svc-payment", "app-insights", False)
+        add_edge("svc-inventory", "app-insights", False)
+        add_edge("svc-notification", "app-insights", False)
 
         # Subnet association edges (Visual connectivity representing NSG & Route Table binding)
         for sub_id in subnets.keys():

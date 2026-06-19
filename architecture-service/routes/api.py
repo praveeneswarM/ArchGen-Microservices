@@ -211,6 +211,7 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
                 node["data"] = node.get("data") or {}
                 node["data"]["label"] = db_name
                 
+            # G. Update DB Replica Node Label
             elif n_id == "db-replica" or (n_type == "DatabaseNode" and "replica" in n_id):
                 node["data"] = node.get("data") or {}
                 node["data"]["label"] = f"{db_name} Replica"
@@ -219,30 +220,83 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
         
     # Ensure position, style, and data dictionary structures exist to prevent frontend crash
     for idx, node in enumerate(nodes):
+        node['data'] = node.get('data') or {}
+        
         if 'position' not in node or not isinstance(node['position'], dict):
             node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
         
+        n_id = str(node.get("id", ""))
+        n_id_lower = n_id.lower()
+        lbl_lower = str(node['data'].get("label", "")).lower()
+        n_type = str(node.get("type", ""))
+
         # Snap back resource nodes to parentNode if they got detached but have a subnet ref
-        subnet_ref = node.get("data", {}).get("subnet") or ""
-        if not node.get("parentNode") and subnet_ref:
-            if subnet_ref.startswith("subnet-") or subnet_ref in ["vnet-group", "rg-group", "region-group"]:
-                node["parentNode"] = subnet_ref
-                # Reset coordinates to a sensible default relative offset within the parent if off bounds
-                pos = node.get("position", {})
-                try:
-                    x_val = float(pos.get("x", 0) if pos.get("x") is not None else 0)
-                    y_val = float(pos.get("y", 0) if pos.get("y") is not None else 0)
-                except (ValueError, TypeError):
-                    x_val, y_val = 0.0, 0.0
-                    
-                if x_val < 0 or x_val > 1500 or y_val < 0 or y_val > 1500:
-                    node["position"] = {"x": float(30 + (idx % 3) * 200), "y": float(60 + (idx // 3) * 100)}
+        subnet_ref = node['data'].get("subnet") or ""
+        if not node.get("parentNode"):
+            if subnet_ref:
+                if subnet_ref.startswith("subnet-") or subnet_ref in ["vnet-group", "rg-group", "region-group"]:
+                    node["parentNode"] = subnet_ref
+                elif "." in subnet_ref:
+                    if ".1." in subnet_ref:
+                        node["parentNode"] = "subnet-ingress"
+                    elif ".2." in subnet_ref:
+                        node["parentNode"] = "subnet-app"
+                    elif ".3." in subnet_ref:
+                        node["parentNode"] = "subnet-data"
+                    elif ".4." in subnet_ref:
+                        node["parentNode"] = "subnet-mgmt"
+                    elif ".5." in subnet_ref:
+                        node["parentNode"] = "subnet-pe"
+            
+            # If still no parentNode, infer from node ID / label / type
+            if not node.get("parentNode"):
+                inferred_subnet = ""
+                if "pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower:
+                    inferred_subnet = "subnet-pe"
+                elif any(db_kw in n_id_lower or db_kw in lbl_lower for db_kw in ["db-", "database", "postgresql", "mysql", "redis", "storage-account", "blob", "replica"]):
+                    inferred_subnet = "subnet-data"
+                elif any(svc_kw in n_id_lower for svc_kw in ["svc-", "aks-"]):
+                    inferred_subnet = "subnet-app"
+                elif any(mgmt_kw in n_id_lower or mgmt_kw in lbl_lower for mgmt_kw in ["vault", "keyvault", "bastion", "log-analytics", "app-insights", "azure-monitor", "alerts", "managed-identity", "role-assignment"]):
+                    inferred_subnet = "subnet-mgmt"
+                elif any(ing_kw in n_id_lower or ing_kw in lbl_lower for ing_kw in ["app-gateway", "azure-firewall", "waf", "ingress"]):
+                    inferred_subnet = "subnet-ingress"
+                
+                if inferred_subnet:
+                    node["parentNode"] = inferred_subnet
+                    node["data"]["subnet"] = inferred_subnet
+
+        # Reset out-of-bounds coordinates if they are outside reasonable relative boundary offsets
+        parent = node.get("parentNode")
+        if parent and parent.startswith("subnet-"):
+            pos = node.get("position", {})
+            try:
+                x_val = float(pos.get("x", 0) if pos.get("x") is not None else 0)
+                y_val = float(pos.get("y", 0) if pos.get("y") is not None else 0)
+            except (ValueError, TypeError):
+                x_val, y_val = 0.0, 0.0
+            
+            if x_val < 0 or x_val > 1500 or y_val < 0 or y_val > 1500 or y_val < -50:
+                node["position"] = {"x": float(30 + (idx % 3) * 200), "y": float(60 + (idx // 3) * 100)}
+
+        # Metadata Normalization: strip customMetadata from infrastructure nodes
+        is_infra = False
+        if (
+            "nsg" in n_id_lower or "nsg" in lbl_lower or 
+            "rt-" in n_id_lower or "-rt" in n_id_lower or "route table" in lbl_lower or "route-table" in lbl_lower or
+            "keyvault" in n_id_lower or "vault" in n_id_lower or
+            "pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower or
+            "role-assignment" in n_id_lower or "role assignment" in lbl_lower or
+            n_type in ["SecurityNode", "MonitoringNode"]
+        ):
+            is_infra = True
+
+        if is_infra and "customMetadata" in node['data']:
+            node['data'].pop("customMetadata", None)
 
         if 'style' not in node or not isinstance(node['style'], dict):
             node['style'] = {}
             
-        node['data'] = node.get('data') or {}
-        
         if 'provider' not in node['data']:
             node['data']['provider'] = provider
         if 'subnet' not in node['data']:
@@ -259,6 +313,178 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
             node['data']['private'] = True
             
     return nodes
+
+
+def rebuild_services_registry(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # Map node types to service categories
+    category_map = {
+        "GatewayNode": "gateway",
+        "FrontendNode": "frontend",
+        "BackendNode": "backend",
+        "DatabaseNode": "database",
+        "CacheNode": "cache",
+        "StorageNode": "storage",
+        "SecurityNode": "security",
+        "MonitoringNode": "monitoring",
+    }
+    services = []
+    seen = set()
+    for node in nodes:
+        n_type = node.get("type")
+        if n_type in ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"]:
+            continue
+        
+        node_id = node.get("id")
+        if not node_id:
+            continue
+            
+        label = node.get("data", {}).get("label") or node_id
+        service_name = label
+        
+        if service_name.lower() in seen:
+            continue
+            
+        seen.add(service_name.lower())
+        
+        category = category_map.get(n_type, "infrastructure")
+        description = f"Managed {label} resource deployed in the topology."
+        
+        services.append({
+            "name": service_name,
+            "category": category,
+            "description": description
+        })
+    return services
+
+
+def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], complexity_warnings: List[str] = None) -> List[str]:
+    if complexity_warnings is None:
+        complexity_warnings = []
+    
+    validation_findings = []
+    consistency_warnings = []
+    
+    node_ids = set(n.get("id") for n in nodes)
+    node_labels = set(str(n.get("data", {}).get("label", "")).lower() for n in nodes)
+    node_types = set(n.get("type") for n in nodes)
+    subnet_nodes = [n for n in nodes if n.get("type") == "SubnetGroupNode"]
+    subnet_count = len(subnet_nodes)
+    
+    # 1. Quality Gate Checks
+    # Validate node count
+    if len(nodes) < 25:
+        validation_findings.append(f"Quality Gate: Node count {len(nodes)} is less than 25.")
+
+    # Validate edge count
+    if len(edges) < 35:
+        validation_findings.append(f"Quality Gate: Edge count {len(edges)} is less than 35.")
+
+    # Validate microservices >= 5
+    microservices = [n for n in nodes if str(n.get("id", "")).lower().startswith("svc-")]
+    if len(microservices) < 5:
+        validation_findings.append(f"Quality Gate: Microservices count {len(microservices)} is less than 5.")
+
+    # Validate nsg_count == subnet_count
+    nsg_count = len([
+        n for n in nodes 
+        if "nsg" in str(n.get("id")).lower() or "nsg" in str(n.get("data", {}).get("label", "")).lower()
+    ])
+    if nsg_count != subnet_count:
+        validation_findings.append(f"Quality Gate: NSG count ({nsg_count}) does not match subnet count ({subnet_count}).")
+
+    # Validate route_table_count == subnet_count
+    rt_count = len([
+        n for n in nodes 
+        if "rt-" in str(n.get("id")).lower() or "-rt" in str(n.get("id")).lower() or "route table" in str(n.get("data", {}).get("label", "")).lower() or "route-table" in str(n.get("data", {}).get("label", "")).lower()
+    ])
+    if rt_count != subnet_count:
+        validation_findings.append(f"Quality Gate: Route Table count ({rt_count}) does not match subnet count ({subnet_count}).")
+
+    # Validate VNet exists
+    has_vnet = "VNetGroupNode" in node_types or any("vnet" in nid.lower() or "vpc" in nid.lower() for nid in node_ids)
+    if not has_vnet:
+        validation_findings.append("Quality Gate: VNet/VPC group node is missing.")
+
+    # Validate all selected subnets exist (Ingress, App, Data, Mgmt, PE)
+    required_subnets = ["ingress", "app", "data", "mgmt", "pe"]
+    existing_subnets = [nid.lower() for nid in node_ids if "subnet" in nid.lower() or "snet" in nid.lower()]
+    for rs in required_subnets:
+        if not any(rs in es for es in existing_subnets):
+            validation_findings.append(f"Quality Gate: Subnet '{rs}' is missing.")
+
+    # Validate Monitoring exists
+    has_monitoring = any(t == "MonitoringNode" or "monitor" in nid.lower() or "insights" in nid.lower() or "analytics" in nid.lower() for nid, t in zip(node_ids, node_types))
+    if not has_monitoring:
+        validation_findings.append("Quality Gate: Monitoring resources are missing.")
+
+    # Validate Backup exists
+    has_backup = any("backup" in nid.lower() or "recovery" in nid.lower() or "vault" in nid.lower() and "key" not in nid.lower() for nid in node_ids)
+    if not has_backup:
+        validation_findings.append("Quality Gate: Backup Vault/Recovery resources are missing.")
+
+    # Validate Private Endpoints exist
+    has_pe = any("pe-" in nid.lower() or "private endpoint" in lbl or "private-endpoint" in lbl or "pe_" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
+    if not has_pe:
+        validation_findings.append("Quality Gate: Private Endpoint resources are missing.")
+
+    # Validate Security resources exist (e.g. Key Vault)
+    has_security = any(t == "SecurityNode" or "vault" in nid.lower() or "key" in nid.lower() for nid, t in zip(node_ids, node_types))
+    if not has_security:
+        validation_findings.append("Quality Gate: Security vault/secrets resources are missing.")
+
+
+    # 2. Consistency Gate Checks
+    non_replica_labels = {}
+    for node in nodes:
+        n_id = str(node.get("id", ""))
+        n_id_lower = n_id.lower()
+        lbl = str(node.get("data", {}).get("label", ""))
+        lbl_lower = lbl.lower()
+        n_type = str(node.get("type", ""))
+
+        # Check duplicate labels (excluding replica/standby)
+        is_replica = "replica" in n_id_lower or "standby" in n_id_lower or "replica" in lbl_lower or "standby" in lbl_lower or "backup" in n_id_lower or "backup" in lbl_lower
+        
+        if not is_replica and n_type not in ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"]:
+            if lbl_lower in non_replica_labels:
+                consistency_warnings.append(f"Consistency Gate: Duplicate node label '{lbl}' detected (node IDs: '{non_replica_labels[lbl_lower]}' and '{n_id}').")
+            else:
+                non_replica_labels[lbl_lower] = n_id
+
+        # Check matching parentNode and subnet metadata
+        parent = node.get("parentNode")
+        subnet_meta = node.get("data", {}).get("subnet", "")
+        if parent and parent.startswith("subnet-"):
+            if subnet_meta.startswith("subnet-") and subnet_meta != parent:
+                consistency_warnings.append(f"Consistency Gate: Node '{n_id}' has parentNode '{parent}' but subnet metadata '{subnet_meta}' mismatch.")
+            elif "." in subnet_meta:
+                parent_sub_type = parent.replace("subnet-", "")
+                sub_cidr_map = {
+                    "ingress": ".1.",
+                    "app": ".2.",
+                    "data": ".3.",
+                    "mgmt": ".4.",
+                    "pe": ".5."
+                }
+                expected_pattern = sub_cidr_map.get(parent_sub_type)
+                if expected_pattern and expected_pattern not in subnet_meta:
+                    consistency_warnings.append(f"Consistency Gate: Node '{n_id}' has parentNode '{parent}' but CIDR subnet metadata '{subnet_meta}' mismatch.")
+
+        # Check correct subnet placement (Private Endpoints in subnet-pe, Storage in subnet-data)
+        is_pe = "pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower
+        if is_pe:
+            if parent != "subnet-pe":
+                consistency_warnings.append(f"Consistency Gate: Private Endpoint '{n_id}' must live in 'subnet-pe'.")
+
+        is_storage_resource = (
+            n_type in ["DatabaseNode", "CacheNode", "StorageNode"] or
+            any(db_kw in n_id_lower or db_kw in lbl_lower for db_kw in ["db-", "database", "postgresql", "mysql", "redis", "storage-account", "blob"])
+        ) and not is_pe
+        if is_storage_resource:
+            if parent != "subnet-data":
+                consistency_warnings.append(f"Consistency Gate: Storage resource '{n_id}' must live in 'subnet-data'.")
+
+    return validation_findings + consistency_warnings + complexity_warnings
 
 
 @router.get('/provider-status')
@@ -312,10 +538,12 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                 c_edges = merged_edges
                 cached['edges'] = c_edges
             
+            cached['services'] = rebuild_services_registry(c_nodes)
+            cached['warnings'] = validate_and_gate_architecture(c_nodes, c_edges, cached.get('warnings', []))
             cached['nodes'] = c_nodes
             cached['node_count'] = len(c_nodes)
             cached['subnet_count'] = len([n for n in c_nodes if n.get('type') == 'SubnetGroupNode'])
-            cached['edge_count'] = len(cached.get('edges', []))
+            cached['edge_count'] = len(c_edges)
             
             exec_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
             perf_logger.log(request_id, 'Cache', exec_ms / 1000.0, True, [], [])
@@ -437,67 +665,8 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     exec_ms = int((end_time - start_time) * 1000)
     
     # 5. Architecture Quality Gate (Non-blocking Validation)
-    validation_findings = []
-    
-    node_ids = set(n.get("id") for n in nodes)
-    node_labels = set(str(n.get("data", {}).get("label", "")).lower() for n in nodes)
-    node_types = set(n.get("type") for n in nodes)
-    subnets = set(n.get("id") for n in nodes if n.get("type") == "SubnetGroupNode")
-
-    # Validate node count
-    if len(nodes) < 25:
-        validation_findings.append(f"Quality Gate: Node count {len(nodes)} is less than 25.")
-
-    # Validate edge count
-    if len(edges) < 35:
-        validation_findings.append(f"Quality Gate: Edge count {len(edges)} is less than 35.")
-
-    # Validate VNet exists
-    has_vnet = "VNetGroupNode" in node_types or any("vnet" in nid.lower() or "vpc" in nid.lower() for nid in node_ids)
-    if not has_vnet:
-        validation_findings.append("Quality Gate: VNet/VPC group node is missing.")
-
-    # Validate all selected subnets exist (Ingress, App, Data, Mgmt, PE)
-    required_subnets = ["ingress", "app", "data", "mgmt", "pe"]
-    existing_subnets = [nid.lower() for nid in node_ids if "subnet" in nid.lower() or "snet" in nid.lower()]
-    for rs in required_subnets:
-        if not any(rs in es for es in existing_subnets):
-            validation_findings.append(f"Quality Gate: Subnet '{rs}' is missing.")
-
-    # Validate NSGs exist
-    has_nsg = any("nsg" in nid.lower() or "security group" in nid.lower() or "firewall" in nid.lower() or "nsg" in lbl or "security group" in lbl for nid, lbl in zip(node_ids, node_labels))
-    if not has_nsg:
-        validation_findings.append("Quality Gate: NSG/Security Group resources are missing.")
-
-    # Validate Route Tables exist
-    has_rt = any("route table" in lbl or "rt-" in nid.lower() or "-rt" in nid.lower() or "route-table" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
-    if not has_rt:
-        validation_findings.append("Quality Gate: Route Table resources are missing.")
-
-    # Validate Monitoring exists
-    has_monitoring = any(t == "MonitoringNode" or "monitor" in nid.lower() or "insights" in nid.lower() or "analytics" in nid.lower() for nid, t in zip(node_ids, node_types))
-    if not has_monitoring:
-        validation_findings.append("Quality Gate: Monitoring resources are missing.")
-
-    # Validate Backup exists
-    has_backup = any("backup" in nid.lower() or "recovery" in nid.lower() or "vault" in nid.lower() and "key" not in nid.lower() for nid in node_ids)
-    if not has_backup:
-        validation_findings.append("Quality Gate: Backup Vault/Recovery resources are missing.")
-
-    # Validate Private Endpoints exist
-    has_pe = any("pe-" in nid.lower() or "private endpoint" in lbl or "private-endpoint" in lbl or "pe_" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
-    if not has_pe:
-        validation_findings.append("Quality Gate: Private Endpoint resources are missing.")
-
-    # Validate Security resources exist (e.g. Key Vault)
-    has_security = any(t == "SecurityNode" or "vault" in nid.lower() or "key" in nid.lower() for nid, t in zip(node_ids, node_types))
-    if not has_security:
-        validation_findings.append("Quality Gate: Security vault/secrets resources are missing.")
-        
-    # Combine findings with Auditor Warnings
-    warnings_list = complexity_res.get('warnings', [])
-    if validation_findings:
-        warnings_list = validation_findings + warnings_list
+    warnings_list = validate_and_gate_architecture(nodes, edges, complexity_res.get('warnings', []))
+    services = rebuild_services_registry(nodes)
 
     # Determine provider/model names to return (never return mock)
     active_provider_val = active_provider if ai_enhanced else 'deterministic'
@@ -531,7 +700,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         'provider': provider,
         'node_count': len(nodes),
         'edge_count': len(edges),
-        'subnet_count': len(subnets)
+        'subnet_count': len([n for n in nodes if n.get('type') == 'SubnetGroupNode'])
     }
 
     perf_logger.log(request_id, resp_dict['active_provider'], exec_ms / 1000.0, False, getattr(llm_client, 'fallback_chain', []), [])
