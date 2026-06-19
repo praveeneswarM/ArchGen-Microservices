@@ -104,10 +104,50 @@ class TerraformEngine:
 
             # Sanitize region for clouds
             region_clean = region_val.lower().strip()
-            if provider.lower() == "azure":
-                region_clean = region_clean.replace(" ", "")
+            region_map = {
+                "azure": {
+                    "east us": "eastus",
+                    "central india": "centralindia",
+                    "west europe": "westeurope",
+                    "us-east-1": "eastus",
+                    "ap-south-1": "centralindia",
+                    "eu-west-1": "westeurope",
+                    "us-east1": "eastus",
+                    "asia-south1": "centralindia",
+                    "europe-west1": "westeurope"
+                },
+                "aws": {
+                    "east us": "us-east-1",
+                    "central india": "ap-south-1",
+                    "west europe": "eu-west-1",
+                    "eastus": "us-east-1",
+                    "centralindia": "ap-south-1",
+                    "westeurope": "eu-west-1",
+                    "us-east1": "us-east-1",
+                    "asia-south1": "ap-south-1",
+                    "europe-west1": "eu-west-1"
+                },
+                "gcp": {
+                    "east us": "us-east1",
+                    "central india": "asia-south1",
+                    "west europe": "europe-west1",
+                    "eastus": "us-east1",
+                    "centralindia": "asia-south1",
+                    "westeurope": "europe-west1",
+                    "us-east-1": "us-east1",
+                    "ap-south-1": "asia-south1",
+                    "eu-west-1": "europe-west1"
+                }
+            }
+            
+            prov_lower = provider.lower()
+            if prov_lower in region_map and region_clean in region_map[prov_lower]:
+                region_clean = region_map[prov_lower][region_clean]
             else:
-                region_clean = region_clean.replace(" ", "-")
+                if prov_lower == "azure":
+                    region_clean = region_clean.replace(" ", "")
+                else:
+                    region_clean = region_clean.replace(" ", "-")
 
             # Map parameters
             context = {

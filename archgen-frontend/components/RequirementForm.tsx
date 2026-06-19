@@ -7,6 +7,69 @@ import {
   FileText, Shield, Cpu, Database, Activity, Network, ArrowRight, ArrowLeft 
 } from "lucide-react";
 
+const regionOptions: Record<string, Array<{ value: string; label: string }>> = {
+  azure: [
+    { value: "East US", label: "East US" },
+    { value: "Central India", label: "Central India" },
+    { value: "West Europe", label: "West Europe" },
+  ],
+  aws: [
+    { value: "us-east-1", label: "US East (N. Virginia)" },
+    { value: "ap-south-1", label: "Asia Pacific (Mumbai)" },
+    { value: "eu-west-1", label: "Europe (Ireland)" },
+  ],
+  gcp: [
+    { value: "us-east1", label: "us-east1 (South Carolina)" },
+    { value: "asia-south1", label: "asia-south1 (Mumbai)" },
+    { value: "europe-west1", label: "europe-west1 (Belgium)" },
+  ],
+};
+
+const computeOptions: Record<string, Array<{ value: string; label: string }>> = {
+  azure: [
+    { value: "AKS", label: "AKS (Azure Kubernetes Service)" },
+    { value: "VMSS", label: "VMSS (Virtual Machine Scale Set)" },
+    { value: "App Service", label: "App Service (PaaS)" },
+    { value: "Azure Functions", label: "Azure Functions (Serverless)" },
+    { value: "Container Apps", label: "Container Apps (Microservices)" },
+  ],
+  aws: [
+    { value: "AKS", label: "EKS (Amazon Elastic Kubernetes Service)" },
+    { value: "VMSS", label: "EC2 Auto Scaling Group" },
+    { value: "App Service", label: "Elastic Beanstalk (PaaS)" },
+    { value: "Azure Functions", label: "AWS Lambda (Serverless)" },
+    { value: "Container Apps", label: "Amazon ECS / Fargate (Microservices)" },
+  ],
+  gcp: [
+    { value: "AKS", label: "GKE (Google Kubernetes Engine)" },
+    { value: "VMSS", label: "Managed Instance Group" },
+    { value: "App Service", label: "App Engine (PaaS)" },
+    { value: "Azure Functions", label: "Cloud Functions (Serverless)" },
+    { value: "Container Apps", label: "Cloud Run (Microservices)" },
+  ],
+};
+
+const databaseOptions: Record<string, Array<{ value: string; label: string }>> = {
+  azure: [
+    { value: "PostgreSQL", label: "PostgreSQL (Flexible Server)" },
+    { value: "MySQL", label: "MySQL (Flexible Server)" },
+    { value: "MongoDB", label: "MongoDB Atlas (NoSQL)" },
+    { value: "CosmosDB", label: "CosmosDB (Multi-Model API)" },
+  ],
+  aws: [
+    { value: "PostgreSQL", label: "Amazon RDS for PostgreSQL" },
+    { value: "MySQL", label: "Amazon RDS for MySQL" },
+    { value: "MongoDB", label: "MongoDB Atlas on AWS" },
+    { value: "CosmosDB", label: "Amazon DynamoDB (NoSQL)" },
+  ],
+  gcp: [
+    { value: "PostgreSQL", label: "Cloud SQL for PostgreSQL" },
+    { value: "MySQL", label: "Cloud SQL for MySQL" },
+    { value: "MongoDB", label: "MongoDB Atlas on GCP" },
+    { value: "CosmosDB", label: "Cloud Firestore / Bigtable" },
+  ],
+};
+
 interface RequirementFormProps {
   onSubmit: (data: RequirementInput) => void;
   isLoading: boolean;
@@ -38,6 +101,14 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
   
   // Compute Section
   const [computeType, setComputeType] = useState("AKS");
+
+  const handleProviderChange = (provider: string) => {
+    setCloudProvider(provider);
+    const defaults = regionOptions[provider];
+    if (defaults && defaults.length > 0) {
+      setRegion(defaults[0].value);
+    }
+  };
   
   // Data Section
   const [dataType, setDataType] = useState("PostgreSQL");
@@ -267,7 +338,7 @@ RPO Target: ${rpo}
                 <label className="text-xs text-slate-400 font-medium">Cloud Provider</label>
                 <select
                   value={cloudProvider}
-                  onChange={(e) => setCloudProvider(e.target.value)}
+                  onChange={(e) => handleProviderChange(e.target.value)}
                   className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
                 >
                   <option value="azure">Azure</option>
@@ -283,9 +354,11 @@ RPO Target: ${rpo}
                   onChange={(e) => setRegion(e.target.value)}
                   className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
                 >
-                  <option value="East US">East US</option>
-                  <option value="Central India">Central India</option>
-                  <option value="West Europe">West Europe</option>
+                  {(regionOptions[cloudProvider] || regionOptions.azure).map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -365,11 +438,11 @@ RPO Target: ${rpo}
                 onChange={(e) => setComputeType(e.target.value)}
                 className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
               >
-                <option value="AKS">AKS (Azure Kubernetes Service)</option>
-                <option value="VMSS">VMSS (Virtual Machine Scale Set)</option>
-                <option value="App Service">App Service (PaaS)</option>
-                <option value="Azure Functions">Azure Functions (Serverless)</option>
-                <option value="Container Apps">Container Apps (Microservices)</option>
+                {(computeOptions[cloudProvider] || computeOptions.azure).map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -380,10 +453,11 @@ RPO Target: ${rpo}
                 onChange={(e) => setDataType(e.target.value)}
                 className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
               >
-                <option value="PostgreSQL">PostgreSQL (Flexible Server)</option>
-                <option value="MySQL">MySQL (Flexible Server)</option>
-                <option value="MongoDB">MongoDB Atlas (NoSQL)</option>
-                <option value="CosmosDB">CosmosDB (Multi-Model API)</option>
+                {(databaseOptions[cloudProvider] || databaseOptions.azure).map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -434,7 +508,9 @@ RPO Target: ${rpo}
               </label>
               <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
                 <input type="checkbox" checked={hasKeyVault} onChange={(e) => setHasKeyVault(e.target.checked)} className="rounded text-cyan-500" />
-                <span className="text-slate-300">Azure Key Vault</span>
+                <span className="text-slate-300">
+                  {cloudProvider === "aws" ? "AWS Secrets Manager" : cloudProvider === "gcp" ? "Secret Manager" : "Azure Key Vault"}
+                </span>
               </label>
               <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
                 <input type="checkbox" checked={hasManagedIdentity} onChange={(e) => setHasManagedIdentity(e.target.checked)} className="rounded text-cyan-500" />
@@ -442,7 +518,9 @@ RPO Target: ${rpo}
               </label>
               <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30 col-span-2">
                 <input type="checkbox" checked={hasDDoS} onChange={(e) => setHasDDoS(e.target.checked)} className="rounded text-cyan-500" />
-                <span className="text-slate-300">Azure DDoS Volumetric Protection Plan</span>
+                <span className="text-slate-300">
+                  {cloudProvider === "aws" ? "AWS Shield Advanced DDoS Protection" : cloudProvider === "gcp" ? "Google Cloud Armor DDoS Protection" : "Azure DDoS Volumetric Protection Plan"}
+                </span>
               </label>
             </div>
 
@@ -471,8 +549,12 @@ RPO Target: ${rpo}
                       onChange={(e) => setMonitoring((prev) => ({ ...prev, [key]: e.target.checked }))}
                       className="rounded border-slate-700 bg-[#0b0f19] text-cyan-500 focus:ring-0"
                     />
-                    <span className="capitalize text-slate-300">
-                      {key.replace(/([A-Z])/g, " $1")}
+                    <span className="capitalize text-slate-300 text-[11px]">
+                      {key === "azureMonitor" 
+                        ? (cloudProvider === "aws" ? "AWS CloudWatch" : cloudProvider === "gcp" ? "Cloud Monitoring" : "Azure Monitor")
+                        : key === "appInsights"
+                        ? (cloudProvider === "aws" ? "AWS X-Ray" : cloudProvider === "gcp" ? "Cloud Trace" : "Application Insights")
+                        : key.replace(/([A-Z])/g, " $1")}
                     </span>
                   </label>
                 ))}

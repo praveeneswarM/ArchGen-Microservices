@@ -351,14 +351,33 @@ async def validate_architecture(payload: Dict[str, Any], request: Request):
         node_types = {n.get("id"): n.get("type") for n in nodes}
         node_labels = {n.get("id"): n.get("data", {}).get("label", "").lower() for n in nodes}
 
-        # 1. Check Key Vault Presence
-        has_vault = any(t == "SecurityNode" and "vault" in node_labels.get(nid, "") for nid, t in node_types.items())
+        # Detect cloud provider from node metadata
+        provider = "azure"
+        for n in nodes:
+            p = n.get("data", {}).get("provider")
+            if p:
+                provider = p.lower()
+                break
+
+        # 1. Check Secrets Vault Presence
+        vault_keywords = ["vault", "secret"]
+        has_vault = any(t == "SecurityNode" and any(k in node_labels.get(nid, "") for k in vault_keywords) for nid, t in node_types.items())
         if not has_vault:
             score -= 15
+            if provider == "aws":
+                vault_name = "AWS Secrets Manager"
+                remediation = "Deploy a dedicated AWS Secrets Manager node inside the management subnet to encrypt resource keys."
+            elif provider == "gcp":
+                vault_name = "GCP Secret Manager"
+                remediation = "Deploy a dedicated Secret Manager node inside the management subnet to encrypt resource keys."
+            else:
+                vault_name = "Azure Key Vault"
+                remediation = "Deploy a dedicated Key Vault node inside the management subnet to encrypt resource keys."
+                
             findings.append({
                 "severity": "High",
-                "description": "Secrets vault repository (Key Vault / Secrets Manager) is missing.",
-                "remediation": "Deploy a dedicated Key Vault node inside the management subnet to encrypt resource keys."
+                "description": f"Secrets vault repository ({vault_name}) is missing.",
+                "remediation": remediation
             })
 
         # 2. Check Database exposure and replica standby
@@ -387,23 +406,45 @@ async def validate_architecture(payload: Dict[str, Any], request: Request):
                     })
 
         # 4. Check for WAF at Ingress
-        has_waf = any("waf" in label for label in node_labels.values())
+        waf_keywords = ["waf", "armor", "firewall"]
+        has_waf = any(any(k in label for k in waf_keywords) for label in node_labels.values())
         if not has_waf:
             score -= 10
+            if provider == "aws":
+                waf_name = "AWS WAF"
+                remediation = "Inject an AWS WAF security layer before the Application Load Balancer."
+            elif provider == "gcp":
+                waf_name = "Google Cloud Armor"
+                remediation = "Inject a Google Cloud Armor security policy before the Global HTTPS Load Balancer."
+            else:
+                waf_name = "Azure WAF"
+                remediation = "Inject an Azure WAF security layer before the Application Gateway load balancer."
+                
             findings.append({
                 "severity": "Medium",
-                "description": "Web Application Firewall (WAF) is not configured at ingress gateway boundaries.",
-                "remediation": "Inject an Azure WAF / AWS WAF security layer before the Application Gateway load balancer."
+                "description": f"Web Application Firewall ({waf_name}) is not configured at ingress gateway boundaries.",
+                "remediation": remediation
             })
 
-        # 5. Check for Network Security Groups (NSGs)
-        has_nsgs = any("nsg" in label for label in node_labels.values())
+        # 5. Check for Network Security Groups (NSGs) / Security Groups / Firewalls
+        sg_keywords = ["nsg", "security group", "firewall", "-sg", "sg-", "sec-group"]
+        has_nsgs = any(any(k in label for k in sg_keywords) for label in node_labels.values())
         if not has_nsgs:
             score -= 10
+            if provider == "aws":
+                sg_name = "Security Groups (SGs)"
+                remediation = "Associate an AWS Security Group with each Subnet node to define inbound/outbound rules."
+            elif provider == "gcp":
+                sg_name = "VPC Firewall Rules"
+                remediation = "Define Google Cloud VPC Firewall Rules for each Subnet node to control traffic flow."
+            else:
+                sg_name = "Network Security Groups (NSGs)"
+                remediation = "Associate a Network Security Group (NSG) with each Subnet node to define inbound/outbound rules."
+                
             findings.append({
                 "severity": "Medium",
-                "description": "Network Security Groups (NSGs) are missing from the subnets.",
-                "remediation": "Associate a Network Security Group with each Subnet node to define inbound/outbound rules."
+                "description": f"Subnet access control policies ({sg_name}) are missing from the subnets.",
+                "remediation": remediation
             })
 
         # Compliance mapping calculations

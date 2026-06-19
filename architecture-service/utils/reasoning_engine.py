@@ -169,7 +169,7 @@ class InfrastructureReasoningEngine:
             "id": "region-group",
             "type": "RegionGroupNode",
             "position": {"x": 50, "y": 50},
-            "data": {"label": f"Region: {self.cloud_provider.upper()} ({self.region})"},
+            "data": {"label": f"Cloud Region: {self.region}"},
             "style": {"width": 2000, "height": 1520}
         })
 
