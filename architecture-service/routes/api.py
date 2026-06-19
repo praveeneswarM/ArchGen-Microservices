@@ -87,6 +87,68 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         
         if not nodes:
             raise Exception("AI generated empty node list")
+
+        # Post-process live LLM-generated topology to enforce user's custom inputs
+        try:
+            vnet_cidr_val = requirements.vnetCIDR or "10.0.0.0/16"
+            ip_prefix = "10.0"
+            match_cidr = re.match(r"^(\d+\.\d+)", vnet_cidr_val)
+            if match_cidr:
+                ip_prefix = match_cidr.group(1)
+
+            reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
+            compute_name = reasoning_engine.get_cloud_resource_name(requirements.computeType or "AKS")
+            db_name = reasoning_engine.get_cloud_resource_name(requirements.database_type or "PostgreSQL")
+
+            for node in nodes:
+                n_id = str(node.get("id", "")).lower()
+                n_type = str(node.get("type", ""))
+                
+                # A. Update Region Node Label
+                if n_type == "RegionGroupNode" or "region" in n_id:
+                    node["data"] = node.get("data") or {}
+                    node["data"]["label"] = f"Cloud Region: {requirements.region.upper() if requirements.region else 'EAST US'}"
+                    
+                # B. Update Resource Group Node Label
+                elif n_type == "ResourceGroupNode" or "rg-" in n_id or n_id == "rg-group":
+                    node["data"] = node.get("data") or {}
+                    node["data"]["label"] = f"Resource Scope: {requirements.resourceGroup or 'rg-production'}"
+                    
+                # C. Update Virtual Network Node Label
+                elif n_type == "VNetGroupNode" or "vnet" in n_id or "vpc" in n_id:
+                    node["data"] = node.get("data") or {}
+                    node["data"]["label"] = f"Virtual Network (VPC): {vnet_cidr_val}"
+                    
+                # D. Update Subnet Node Labels
+                elif n_type == "SubnetGroupNode" or "subnet" in n_id:
+                    node["data"] = node.get("data") or {}
+                    lbl = str(node["data"].get("label", "")).lower()
+                    if "ingress" in n_id or "ingress" in lbl:
+                        node["data"]["label"] = f"Ingress Subnet ({ip_prefix}.1.0/24)"
+                    elif "mgmt" in n_id or "mgmt" in lbl or "management" in lbl:
+                        node["data"]["label"] = f"Management Subnet ({ip_prefix}.4.0/24)"
+                    elif "pe" in n_id or "pe" in lbl or "private endpoint" in lbl or "private-endpoint" in lbl:
+                        node["data"]["label"] = f"Private Endpoint Subnet ({ip_prefix}.5.0/24)"
+                    elif "app" in n_id or "app" in lbl or "application" in lbl:
+                        node["data"]["label"] = f"Application Subnet ({ip_prefix}.2.0/24)"
+                    elif "data" in n_id or "data" in lbl or "database" in lbl:
+                        node["data"]["label"] = f"Data Subnet ({ip_prefix}.3.0/24)"
+                        
+                # E. Update Compute engine Node Label
+                elif "aks" in n_id or "compute" in n_id or "cluster" in n_id or n_id == "aks-cluster":
+                    node["data"] = node.get("data") or {}
+                    node["data"]["label"] = f"{compute_name} Engine"
+                    
+                # F. Update Primary/Replica DB Node Labels
+                elif n_id == "db-primary" or n_id == "database" or (n_type == "DatabaseNode" and "replica" not in n_id):
+                    node["data"] = node.get("data") or {}
+                    node["data"]["label"] = db_name
+                    
+                elif n_id == "db-replica" or (n_type == "DatabaseNode" and "replica" in n_id):
+                    node["data"] = node.get("data") or {}
+                    node["data"]["label"] = f"{db_name} Replica"
+        except Exception as pe:
+            logger.warning(f"Failed to post-process live node labels: {pe}")
             
         # Ensure position exists to prevent frontend crash
         for idx, node in enumerate(nodes):

@@ -19,6 +19,9 @@ class RequirementAnalysisAgent(BaseAgent):
         user_prompt = (
             f"Project Name: {requirements.projectName or 'None'}\n"
             f"Deployment Region: {requirements.region or 'None'}\n"
+            f"Resource Group: {requirements.resourceGroup or 'None'}\n"
+            f"VNet CIDR: {requirements.vnetCIDR or 'None'}\n"
+            f"Compute Type: {requirements.computeType or 'None'}\n"
             f"Availability Target SLA: {requirements.availability_target or 'None'}\n"
             f"RTO Target: {requirements.rto or 'None'}\n"
             f"RPO Target: {requirements.rpo or 'None'}\n"
