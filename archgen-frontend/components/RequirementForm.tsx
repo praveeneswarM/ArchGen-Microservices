@@ -169,6 +169,9 @@ RPO Target: ${rpo}
       availability_target: availabilityTarget,
       rto: rto,
       rpo: rpo,
+      resourceGroup: resourceGroup,
+      vnetCIDR: vnetCIDR,
+      computeType: computeType,
     });
   };
 

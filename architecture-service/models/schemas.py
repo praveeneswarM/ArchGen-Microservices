@@ -20,6 +20,9 @@ class RequirementInput(BaseModel):
     availability_target: Optional[str] = None
     rto: Optional[str] = None
     rpo: Optional[str] = None
+    resourceGroup: Optional[str] = None
+    vnetCIDR: Optional[str] = None
+    computeType: Optional[str] = None
 
     @field_validator('app_description')
     @classmethod

@@ -13,6 +13,9 @@ export interface RequirementInput {
   availability_target?: string;
   rto?: string;
   rpo?: string;
+  resourceGroup?: string;
+  vnetCIDR?: string;
+  computeType?: string;
 }
 
 export interface NodePosition {

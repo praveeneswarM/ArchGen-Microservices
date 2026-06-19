@@ -143,7 +143,7 @@ export default function DashboardPage() {
     setToasts((prev) => [...prev, { id, type, title, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
+    }, 60000);
   }, []);
 
   // Monitor architecture changes to display live/fallback/mock toast status
@@ -1123,7 +1123,8 @@ export default function DashboardPage() {
               </div>
               <button
                 onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
-                className="text-[10px] text-slate-500 hover:text-white shrink-0 font-mono ml-auto"
+                className="text-slate-400 hover:text-white hover:bg-white/10 shrink-0 font-bold font-sans text-xs p-1.5 rounded transition-all ml-auto flex items-center justify-center self-start"
+                title="Dismiss notification"
               >
                 ✕
               </button>

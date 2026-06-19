@@ -19,8 +19,22 @@ class InfrastructureReasoningEngine:
         "microservices"
     ]
 
-    def __init__(self, cloud_provider: str = "azure"):
+    def __init__(self, cloud_provider: str = "azure", requirements: Any = None):
         self.cloud_provider = cloud_provider.lower()
+        self.projectName = "Enterprise Stack"
+        self.region = "East US"
+        self.resource_group = "rg-production"
+        self.vnet_cidr = "10.0.0.0/16"
+        self.compute_type = "AKS"
+        self.database_type = "PostgreSQL"
+        
+        if requirements:
+            self.projectName = getattr(requirements, "projectName", None) or "Enterprise Stack"
+            self.region = getattr(requirements, "region", None) or "East US"
+            self.resource_group = getattr(requirements, "resourceGroup", None) or "rg-production"
+            self.vnet_cidr = getattr(requirements, "vnetCIDR", None) or "10.0.0.0/16"
+            self.compute_type = getattr(requirements, "computeType", None) or getattr(requirements, "application_type", None) or "AKS"
+            self.database_type = getattr(requirements, "database_type", None) or "PostgreSQL"
 
     def classify_workload(self, app_description: str, expected_users: str) -> str:
         desc = app_description.lower()
@@ -51,6 +65,7 @@ class InfrastructureReasoningEngine:
         return "crud"
 
     def get_cloud_resource_name(self, generic_type: str) -> str:
+        generic_key = generic_type.lower().strip()
         mapping = {
             "azure": {
                 "cdn": "Azure Front Door / CDN",
@@ -58,7 +73,15 @@ class InfrastructureReasoningEngine:
                 "appgw": "Azure Application Gateway",
                 "firewall": "Azure Firewall",
                 "aks": "Azure Kubernetes Service (AKS)",
+                "vmss": "Azure VM Scale Set (VMSS)",
+                "app service": "Azure App Service (PaaS)",
+                "azure functions": "Azure Functions (Serverless)",
+                "container apps": "Azure Container Apps (Microservices)",
                 "postgres": "Azure Database for PostgreSQL",
+                "postgresql": "Azure Database for PostgreSQL",
+                "mysql": "Azure Database for MySQL",
+                "mongodb": "MongoDB Atlas on Azure",
+                "cosmosdb": "Azure Cosmos DB API",
                 "redis": "Azure Cache for Redis",
                 "keyvault": "Azure Key Vault",
                 "blob": "Azure Blob Storage",
@@ -75,8 +98,16 @@ class InfrastructureReasoningEngine:
                 "waf": "AWS WAF",
                 "appgw": "Application Load Balancer (ALB)",
                 "firewall": "AWS Network Firewall",
-                "aks": "Amazon EKS",
+                "aks": "Amazon Elastic Kubernetes Service (EKS)",
+                "vmss": "AWS EC2 Auto Scaling Group",
+                "app service": "AWS Elastic Beanstalk (PaaS)",
+                "azure functions": "AWS Lambda (Serverless)",
+                "container apps": "Amazon ECS / Fargate (Microservices)",
                 "postgres": "Amazon RDS for PostgreSQL",
+                "postgresql": "Amazon RDS for PostgreSQL",
+                "mysql": "Amazon RDS for MySQL",
+                "mongodb": "MongoDB Atlas on AWS",
+                "cosmosdb": "Amazon DynamoDB (NoSQL)",
                 "redis": "Amazon ElastiCache",
                 "keyvault": "AWS Secrets Manager",
                 "blob": "Amazon S3",
@@ -94,7 +125,15 @@ class InfrastructureReasoningEngine:
                 "appgw": "Global HTTPS Load Balancer",
                 "firewall": "Cloud Next-Gen Firewall",
                 "aks": "Google Kubernetes Engine (GKE)",
+                "vmss": "GCP Managed Instance Group",
+                "app service": "Google App Engine (PaaS)",
+                "azure functions": "Google Cloud Functions (Serverless)",
+                "container apps": "Google Cloud Run (Microservices)",
                 "postgres": "Cloud SQL for PostgreSQL",
+                "postgresql": "Cloud SQL for PostgreSQL",
+                "mysql": "Cloud SQL for MySQL",
+                "mongodb": "MongoDB Atlas on GCP",
+                "cosmosdb": "Cloud Firestore / Bigtable",
                 "redis": "MemoryStore for Redis",
                 "keyvault": "Secret Manager",
                 "blob": "Cloud Storage",
@@ -109,7 +148,7 @@ class InfrastructureReasoningEngine:
             }
         }
         provider = self.cloud_provider if self.cloud_provider in mapping else "azure"
-        return mapping[provider].get(generic_type, generic_type.capitalize())
+        return mapping[provider].get(generic_key, generic_type.capitalize())
 
     def synthesize_from_intent(self) -> Dict[str, Any]:
         """
@@ -120,13 +159,17 @@ class InfrastructureReasoningEngine:
         edges = []
         services = ["identity", "compute", "storage", "database", "networking", "security"]
 
-        # Outer Nesting Structure Node definitions
+        # Extract IP prefix from VNet CIDR (e.g. "10.0" from "10.0.0.0/16")
+        import re
+        prefix_match = re.match(r'^(\d{1,3}\.\d{1,3})\.', self.vnet_cidr)
+        ip_prefix = prefix_match.group(1) if prefix_match else "10.0"
+
         # Outer Nesting Structure Node definitions
         nodes.append({
             "id": "region-group",
             "type": "RegionGroupNode",
             "position": {"x": 50, "y": 50},
-            "data": {"label": f"Region: {self.cloud_provider.upper()} East"},
+            "data": {"label": f"Region: {self.cloud_provider.upper()} ({self.region})"},
             "style": {"width": 2000, "height": 1520}
         })
 
@@ -135,7 +178,7 @@ class InfrastructureReasoningEngine:
             "type": "ResourceGroupNode",
             "parentNode": "region-group",
             "position": {"x": 30, "y": 60},
-            "data": {"label": f"Resource Scope: rg-production"},
+            "data": {"label": f"Resource Scope: {self.resource_group}"},
             "style": {"width": 1940, "height": 1430}
         })
 
@@ -144,17 +187,17 @@ class InfrastructureReasoningEngine:
             "type": "VNetGroupNode",
             "parentNode": "rg-group",
             "position": {"x": 30, "y": 60},
-            "data": {"label": f"Virtual Network (VPC): 10.0.0.0/16"},
+            "data": {"label": f"Virtual Network (VPC): {self.vnet_cidr}"},
             "style": {"width": 1880, "height": 1340}
         })
 
         # Subnet Nodes definitions
         subnets = {
-            "subnet-ingress": {"label": "Ingress Subnet (10.0.1.0/24)", "x": 40, "y": 60, "width": 660, "height": 340},
-            "subnet-mgmt": {"label": "Management Subnet (10.0.4.0/24)", "x": 740, "y": 60, "width": 660, "height": 620},
-            "subnet-pe": {"label": "Private Endpoint Subnet (10.0.5.0/24)", "x": 1440, "y": 60, "width": 400, "height": 450},
-            "subnet-app": {"label": "Application Subnet (10.0.2.0/24)", "x": 40, "y": 720, "width": 1800, "height": 340},
-            "subnet-data": {"label": "Data Subnet (10.0.3.0/24)", "x": 40, "y": 1100, "width": 1800, "height": 340},
+            "subnet-ingress": {"label": f"Ingress Subnet ({ip_prefix}.1.0/24)", "x": 40, "y": 60, "width": 660, "height": 340},
+            "subnet-mgmt": {"label": f"Management Subnet ({ip_prefix}.4.0/24)", "x": 740, "y": 60, "width": 660, "height": 620},
+            "subnet-pe": {"label": f"Private Endpoint Subnet ({ip_prefix}.5.0/24)", "x": 1440, "y": 60, "width": 400, "height": 450},
+            "subnet-app": {"label": f"Application Subnet ({ip_prefix}.2.0/24)", "x": 40, "y": 720, "width": 1800, "height": 340},
+            "subnet-data": {"label": f"Data Subnet ({ip_prefix}.3.0/24)", "x": 40, "y": 1100, "width": 1800, "height": 340},
         }
 
         for sub_id, cfg in subnets.items():
@@ -202,7 +245,9 @@ class InfrastructureReasoningEngine:
         add_edge("waf", "appgw", True)
 
         # --- 2. Application Subnet Compute Resources ---
-        add_nested_node("aks-cluster", "BackendNode", f"{self.get_cloud_resource_name('aks')} Engine", 40, 60, "subnet-app", "K8s Control Plane", 100)
+        compute_key = self.compute_type.lower().replace(" (paas)", "").replace(" (serverless)", "").replace(" (microservices)", "").strip()
+        compute_name = self.get_cloud_resource_name(compute_key)
+        add_nested_node("aks-cluster", "BackendNode", f"{compute_name} Engine", 40, 60, "subnet-app", "Primary Compute Cluster", 100)
         add_nested_node("aks-system", "BackendNode", "System Node Pool", 40, 190, "subnet-app", "Core cluster system pods", 120)
         add_nested_node("aks-user", "BackendNode", "User Node Pool", 390, 190, "subnet-app", "Compute worker nodes", 240)
         
@@ -224,8 +269,10 @@ class InfrastructureReasoningEngine:
         add_edge("svc-api-gateway", "svc-architecture", True)
 
         # --- 3. Data Subnet Database Resources ---
-        add_nested_node("db-primary", "DatabaseNode", self.get_cloud_resource_name("postgres"), 40, 60, "subnet-data", "Primary DB Instance", 250)
-        add_nested_node("db-replica", "DatabaseNode", f"{self.get_cloud_resource_name('postgres')} Replica", 40, 190, "subnet-data", "HA Read-Replica Server", 250)
+        db_key = self.database_type.lower().replace(" (flexible server)", "").replace(" (nosql)", "").replace(" (multi-model api)", "").strip()
+        db_name = self.get_cloud_resource_name(db_key)
+        add_nested_node("db-primary", "DatabaseNode", db_name, 40, 60, "subnet-data", "Primary DB Instance", 250)
+        add_nested_node("db-replica", "DatabaseNode", f"{db_name} Replica", 40, 190, "subnet-data", "HA Read-Replica Server", 250)
         add_nested_node("redis", "CacheNode", self.get_cloud_resource_name("redis"), 390, 190, "subnet-data", "In-memory cache cluster", 120)
         add_nested_node("blob", "StorageNode", self.get_cloud_resource_name("blob"), 740, 190, "subnet-data", "Blob Assets Bucket", 80)
         add_nested_node("tf-state", "StorageNode", "Terraform State Storage", 1090, 190, "subnet-data", "State locking bucket", 5)

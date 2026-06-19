@@ -95,7 +95,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             
     except Exception as e:
         logger.warning(f"AI Generation Failed: {e}. Falling back to deterministic engine.")
-        reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider)
+        reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
         workload = reasoning_engine.classify_workload(requirements.app_description, requirements.expected_users)
         raw_topology = reasoning_engine.synthesize_from_intent()
         topology = reasoning_engine.normalize_topology(raw_topology)
