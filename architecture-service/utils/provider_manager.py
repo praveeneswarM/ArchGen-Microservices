@@ -197,9 +197,10 @@ class ProviderManager:
         log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
         os.makedirs(log_dir, exist_ok=True)
         
+        timeout_val = int(os.getenv('MAX_PROVIDER_TIMEOUT', '60'))
         async with aiohttp.ClientSession() as session:
-            # Enforce strict 20 second timeout for Ollama local execution
-            async with session.post(f'{self.ollama_base_url}/api/generate', json=payload, timeout=20) as resp:
+            # Enforce configured timeout for Ollama local execution
+            async with session.post(f'{self.ollama_base_url}/api/generate', json=payload, timeout=timeout_val) as resp:
                 if resp.status != 200:
                     raise Exception(f'Ollama failed with status {resp.status}')
                 data = await resp.json()
