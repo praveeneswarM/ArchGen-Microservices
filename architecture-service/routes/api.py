@@ -35,6 +35,93 @@ cache_manager = CacheManager()
 perf_logger = PerformanceLogger()
 
 from utils.provider_manager import ProviderManager
+from typing import List, Dict, Any
+
+def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requirements: Any) -> List[Dict[str, Any]]:
+    node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
+    
+    containers = [
+        {
+            "id": "region-group",
+            "type": "RegionGroupNode",
+            "label": f"Cloud Region: {requirements.region.upper() if requirements.region else 'EAST US'}",
+            "parentNode": None,
+            "position": {"x": 0.0, "y": 0.0},
+            "style": {"width": 2900.0, "height": 1780.0},
+            "data": {"provider": provider, "resource_type": "region"}
+        },
+        {
+            "id": "rg-group",
+            "type": "ResourceGroupNode",
+            "label": f"Resource Scope: {requirements.resourceGroup or 'rg-production'}",
+            "parentNode": "region-group",
+            "position": {"x": 30.0, "y": 45.0},
+            "style": {"width": 2840.0, "height": 1690.0},
+            "data": {"provider": provider, "resource_type": "resourcegroup"}
+        },
+        {
+            "id": "vnet-group",
+            "type": "VNetGroupNode",
+            "label": f"Virtual Network (VPC): {requirements.vnetCIDR or '10.0.0.0/16'}",
+            "parentNode": "rg-group",
+            "position": {"x": 30.0, "y": 45.0},
+            "style": {"width": 2780.0, "height": 1600.0},
+            "data": {"provider": provider, "resource_type": "vnet"}
+        },
+        {
+            "id": "subnet-ingress",
+            "type": "SubnetGroupNode",
+            "label": "Ingress Subnet (10.0.1.0/24)",
+            "parentNode": "vnet-group",
+            "position": {"x": 40.0, "y": 60.0},
+            "style": {"width": 700.0, "height": 400.0},
+            "data": {"subnet": "subnet-ingress", "provider": provider, "resource_type": "subnet"}
+        },
+        {
+            "id": "subnet-mgmt",
+            "type": "SubnetGroupNode",
+            "label": "Management Subnet (10.0.4.0/24)",
+            "parentNode": "vnet-group",
+            "position": {"x": 780.0, "y": 60.0},
+            "style": {"width": 1000.0, "height": 600.0},
+            "data": {"subnet": "subnet-mgmt", "provider": provider, "resource_type": "subnet"}
+        },
+        {
+            "id": "subnet-pe",
+            "type": "SubnetGroupNode",
+            "label": "Private Endpoint Subnet (10.0.5.0/24)",
+            "parentNode": "vnet-group",
+            "position": {"x": 1820.0, "y": 60.0},
+            "style": {"width": 900.0, "height": 600.0},
+            "data": {"subnet": "subnet-pe", "provider": provider, "resource_type": "subnet"}
+        },
+        {
+            "id": "subnet-app",
+            "type": "SubnetGroupNode",
+            "label": "Application Subnet (10.0.2.0/24)",
+            "parentNode": "vnet-group",
+            "position": {"x": 40.0, "y": 720.0},
+            "style": {"width": 2680.0, "height": 400.0},
+            "data": {"subnet": "subnet-app", "provider": provider, "resource_type": "subnet"}
+        },
+        {
+            "id": "subnet-data",
+            "type": "SubnetGroupNode",
+            "label": "Data Subnet (10.0.3.0/24)",
+            "parentNode": "vnet-group",
+            "position": {"x": 40.0, "y": 1160.0},
+            "style": {"width": 2680.0, "height": 400.0},
+            "data": {"subnet": "subnet-data", "provider": provider, "resource_type": "subnet"}
+        }
+    ]
+
+    injected = list(nodes)
+    for container in containers:
+        c_id = container["id"]
+        if c_id not in node_ids:
+            injected.insert(0, container)
+            
+    return injected
 
 @router.get('/provider-status')
 async def get_provider_status():
@@ -106,6 +193,9 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                 logger.info("AI Enhancement successfully generated topology via AI agents")
         except Exception as e:
             logger.warning(f"AI Enhancement failed to plan: {e}. Keeping deterministic baseline.")
+
+    # Ensure all required container nodes exist to prevent frontend crash
+    nodes = ensure_container_nodes(nodes, provider, requirements)
 
     # Post-process live/enhanced/deterministic topology to enforce user's custom inputs
     try:
