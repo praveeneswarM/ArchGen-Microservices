@@ -68,11 +68,58 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
   const [rto, setRto] = useState("4 hours");
   const [rpo, setRpo] = useState("1 hour");
 
-  const handleNext = () => setStep((prev) => Math.min(prev + 1, 5));
-  const handlePrev = () => setStep((prev) => Math.max(prev - 1, 1));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateStep = (currentStep: number): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (currentStep === 1) {
+      if (!appName.trim() || appName.trim().length < 3) {
+        newErrors.appName = "Application name must be at least 3 characters.";
+      }
+      if (!appDescription.trim() || appDescription.trim().length < 15) {
+        newErrors.appDescription = "Application description must be at least 15 characters to provide adequate context for AI agents.";
+      }
+    }
+
+    if (currentStep === 2) {
+      if (!resourceGroup.trim() || !/^[a-zA-Z0-9-_]+$/.test(resourceGroup)) {
+        newErrors.resourceGroup = "Resource group name must contain only alphanumeric characters, hyphens, or underscores.";
+      }
+      const cidrPattern = /^([0-9]{1,3}\.){3}[0-9]{1,3}\/[0-9]{1,2}$/;
+      if (!vnetCIDR.trim() || !cidrPattern.test(vnetCIDR)) {
+        newErrors.vnetCIDR = "Must be a valid VNet IP CIDR block (e.g. 10.0.0.0/16).";
+      }
+    }
+
+    if (currentStep === 5) {
+      const budgetNum = parseInt(monthlyBudget.replace(/[^\d]/g, ""), 10);
+      if (isNaN(budgetNum) || budgetNum <= 0) {
+        newErrors.monthlyBudget = "Monthly budget limit must be a positive number.";
+      }
+      if (!expectedUsers.trim()) {
+        newErrors.expectedUsers = "Expected user load is required.";
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleNext = () => {
+    if (validateStep(step)) {
+      setStep((prev) => Math.min(prev + 1, 5));
+    }
+  };
+
+  const handlePrev = () => {
+    setErrors({});
+    setStep((prev) => Math.max(prev - 1, 1));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateStep(step)) return;
     
     // Construct rich technical details into additional_notes
     const subnetDetails = [
@@ -164,9 +211,12 @@ RPO Target: ${rpo}
                 type="text"
                 value={appName}
                 onChange={(e) => setAppName(e.target.value)}
-                className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                className={`bg-[#0b0f19] border ${errors.appName ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors`}
                 placeholder="Enterprise Stack"
               />
+              {errors.appName && (
+                <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.appName}</span>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -193,9 +243,12 @@ RPO Target: ${rpo}
                 value={appDescription}
                 onChange={(e) => setAppDescription(e.target.value)}
                 rows={4}
-                className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors resize-none leading-normal font-sans"
+                className={`bg-[#0b0f19] border ${errors.appDescription ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors resize-none leading-normal font-sans`}
                 placeholder="Describe your workload, users flows, database triggers..."
               />
+              {errors.appDescription && (
+                <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.appDescription}</span>
+              )}
             </div>
           </div>
         )}
@@ -241,9 +294,12 @@ RPO Target: ${rpo}
                   type="text"
                   value={resourceGroup}
                   onChange={(e) => setResourceGroup(e.target.value)}
-                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors font-mono"
+                  className={`bg-[#0b0f19] border ${errors.resourceGroup ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
                   placeholder="rg-production"
                 />
+                {errors.resourceGroup && (
+                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.resourceGroup}</span>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -252,9 +308,12 @@ RPO Target: ${rpo}
                   type="text"
                   value={vnetCIDR}
                   onChange={(e) => setVnetCIDR(e.target.value)}
-                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors font-mono"
+                  className={`bg-[#0b0f19] border ${errors.vnetCIDR ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
                   placeholder="10.0.0.0/16"
                 />
+                {errors.vnetCIDR && (
+                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.vnetCIDR}</span>
+                )}
               </div>
             </div>
 
@@ -432,9 +491,12 @@ RPO Target: ${rpo}
                   type="text"
                   value={monthlyBudget}
                   onChange={(e) => setMonthlyBudget(e.target.value)}
-                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors font-mono"
+                  className={`bg-[#0b0f19] border ${errors.monthlyBudget ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
                   placeholder="1200"
                 />
+                {errors.monthlyBudget && (
+                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.monthlyBudget}</span>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -443,9 +505,12 @@ RPO Target: ${rpo}
                   type="text"
                   value={expectedUsers}
                   onChange={(e) => setExpectedUsers(e.target.value)}
-                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors font-mono"
+                  className={`bg-[#0b0f19] border ${errors.expectedUsers ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
                   placeholder="100,000 monthly"
                 />
+                {errors.expectedUsers && (
+                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.expectedUsers}</span>
+                )}
               </div>
             </div>
 

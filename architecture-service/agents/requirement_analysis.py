@@ -17,6 +17,11 @@ class RequirementAnalysisAgent(BaseAgent):
         Analyzes raw user requirements.
         """
         user_prompt = (
+            f"Project Name: {requirements.projectName or 'None'}\n"
+            f"Deployment Region: {requirements.region or 'None'}\n"
+            f"Availability Target SLA: {requirements.availability_target or 'None'}\n"
+            f"RTO Target: {requirements.rto or 'None'}\n"
+            f"RPO Target: {requirements.rpo or 'None'}\n"
             f"Application Description: {requirements.app_description}\n"
             f"Application Type: {requirements.application_type}\n"
             f"Expected Users: {requirements.expected_users}\n"

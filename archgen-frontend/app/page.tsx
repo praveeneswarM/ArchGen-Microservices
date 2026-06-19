@@ -1,90 +1,171 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Cloud, Layers, ShieldCheck, Sparkles, Terminal, LucideIcon } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, Cloud, Layers, ShieldCheck, Sparkles, Terminal, Menu, X, LucideIcon } from "lucide-react";
 
 export default function LandingPage() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
-    <div className="min-h-screen bg-white text-zinc-950">
-      <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-4 lg:px-8">
+    <div className="min-h-screen bg-[#030712] text-slate-100 relative overflow-hidden flex flex-col justify-between font-sans">
+      {/* Premium Background Glow Blobs */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-[20%] right-[-10%] w-[45%] h-[45%] rounded-full bg-indigo-500/10 blur-[130px] pointer-events-none"></div>
+
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#030712]/75 backdrop-blur-md">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-zinc-950 text-white">
-              <Terminal className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/20 bg-slate-900 text-cyan-400 shadow-lg shadow-cyan-500/10">
+              <Terminal className="h-5 w-5 animate-pulse" />
             </div>
             <div>
-              <div className="text-sm font-semibold">ArchGen AI</div>
-              <div className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Enterprise Cloud Architecture Studio</div>
+              <div className="text-sm font-bold text-white tracking-wide">ArchGen AI</div>
+              <div className="text-[9px] uppercase tracking-[0.25em] text-slate-400 hidden xs:block">
+                Enterprise Cloud Architecture Studio
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/login" className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-950">
+
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center gap-4">
+            <Link 
+              href="/login" 
+              className="rounded-lg border border-white/10 px-4 py-2 text-xs font-mono font-medium text-slate-300 transition hover:border-cyan-500 hover:text-cyan-400 bg-white/5 hover:bg-cyan-500/5"
+            >
               Login
             </Link>
-            <Link href="/register" className="rounded-full bg-zinc-950 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800">
+            <Link 
+              href="/register" 
+              className="rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 px-4 py-2 text-xs font-mono font-bold text-slate-950 transition shadow-lg shadow-cyan-500/10 hover:shadow-cyan-500/20"
+            >
               Launch Studio
             </Link>
           </div>
+
+          {/* Mobile Menu Button */}
+          <button 
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
+            className="p-2 md:hidden hover:bg-white/5 rounded-lg border border-white/5 text-slate-400 hover:text-white transition"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
+
+        {/* Mobile Dropdown Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-b border-white/5 bg-[#030712] px-4 py-4 space-y-3 animate-fade-in">
+            <Link 
+              href="/login" 
+              onClick={() => setMobileMenuOpen(false)}
+              className="block text-center rounded-lg border border-white/10 px-4 py-2.5 text-xs font-mono font-medium text-slate-300 bg-white/5 hover:border-cyan-500"
+            >
+              Login
+            </Link>
+            <Link 
+              href="/register" 
+              onClick={() => setMobileMenuOpen(false)}
+              className="block text-center rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 px-4 py-2.5 text-xs font-mono font-bold text-slate-950"
+            >
+              Launch Studio
+            </Link>
+          </div>
+        )}
       </header>
 
-      <main className="mx-auto max-w-[1400px] px-4 py-16 lg:px-8 lg:py-24">
-        <div className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr] xl:items-center">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
-              <Sparkles className="h-3.5 w-3.5" />
-              Black & white workflow
+      {/* Main Content */}
+      <main className="mx-auto max-w-[1400px] w-full px-4 py-12 sm:px-6 lg:px-8 lg:py-20 flex-grow flex flex-col justify-center">
+        <div className="grid gap-12 xl:grid-cols-[1.1fr_0.9fr] xl:items-center">
+          
+          {/* Left Hero Column */}
+          <div className="space-y-6 md:space-y-8 text-center xl:text-left">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/5 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.2em] text-cyan-400 shadow-inner">
+              <Sparkles className="h-3 w-3 text-cyan-300" />
+              Agentic Multi-Service Studio
             </div>
-            <h1 className="mt-6 max-w-3xl text-5xl font-semibold tracking-tight text-zinc-950 lg:text-7xl">
-              Design cloud architecture with clarity.
+            
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white leading-[1.1] max-w-3xl mx-auto xl:mx-0">
+              Design cloud architecture with <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 drop-shadow-[0_2px_10px_rgba(6,182,212,0.15)]">clarity</span>.
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-600 lg:text-lg">
-              ArchGen AI turns project setup, requirements, planning, architecture, and export into a guided enterprise workflow.
+            
+            <p className="max-w-2xl text-sm sm:text-base leading-relaxed text-slate-400 mx-auto xl:mx-0">
+              ArchGen AI turns complex infrastructure briefs, requirements, security policies, and cost targets into structured visual blueprints and compilable Terraform configurations automatically.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/register" className="inline-flex items-center gap-2 rounded-full bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800">
+            
+            <div className="flex flex-wrap gap-4 justify-center xl:justify-start">
+              <Link 
+                href="/register" 
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 px-6 py-3.5 text-xs font-mono font-bold text-slate-950 transition-all hover:translate-y-[-1px] shadow-lg shadow-cyan-500/10 hover:shadow-cyan-500/25"
+              >
                 Get Started
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link href="/login" className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-5 py-3 text-sm font-medium text-zinc-700 transition hover:border-zinc-950">
+              <Link 
+                href="/login" 
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 px-6 py-3.5 text-xs font-mono font-bold text-slate-200 transition-all"
+              >
                 Access Dashboard
               </Link>
             </div>
           </div>
 
-          <div className="rounded-[32px] border border-zinc-200 bg-zinc-50 p-6 shadow-sm">
+          {/* Right Blueprint Cards Column */}
+          <div className="rounded-3xl border border-white/10 bg-[#090d16]/40 p-5 sm:p-6 shadow-2xl backdrop-blur-xl relative">
+            {/* Soft inner glow */}
+            <div className="absolute inset-0 border border-cyan-500/5 rounded-3xl pointer-events-none"></div>
+            
             <div className="grid gap-4 sm:grid-cols-2">
               {[
-                ["Project Setup", "Define the stack, provider, scale, and budget."],
-                ["Requirements", "Capture app behavior, constraints, and security needs."],
-                ["AI Planning", "Review provider/model-driven planning output."],
-                ["Studio & Export", "Edit, review, and export Terraform deliverables."],
-              ].map(([title, description]) => (
-                <div key={title} className="rounded-3xl border border-zinc-200 bg-white p-5">
-                  <div className="text-sm font-medium text-zinc-950">{title}</div>
-                  <div className="mt-2 text-sm leading-6 text-zinc-600">{description}</div>
+                ["Project Setup", "Define the stack, provider, scale, and budget limits.", "01"],
+                ["Requirements", "Capture app behavior, networking zones, and security protocols.", "02"],
+                ["AI Planning", "Review provider-aware planning graph topologies dynamically.", "03"],
+                ["Studio & Export", "Refactor cloud systems and compile synthesizable Terraform.", "04"],
+              ].map(([title, description, num]) => (
+                <div 
+                  key={title} 
+                  className="rounded-2xl border border-white/5 bg-slate-950/60 p-5 hover:border-cyan-500/20 hover:bg-slate-950/80 transition-all relative group"
+                >
+                  <span className="absolute top-4 right-4 text-[10px] font-mono text-cyan-500/30 group-hover:text-cyan-500/60 transition-colors">
+                    {num}
+                  </span>
+                  <div className="text-xs font-bold text-white font-mono uppercase tracking-wider">{title}</div>
+                  <div className="mt-2.5 text-xs leading-relaxed text-slate-400">{description}</div>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="mt-16 grid gap-4 md:grid-cols-3">
+        {/* Benefits Row */}
+        <div className="mt-16 grid gap-4 md:grid-cols-3 w-full">
           {(
             [
-              [Cloud, "Provider-aware", "OpenAI, Ollama, and fallback flows stay visible."],
-              [Layers, "Guided workflow", "Progress moves users from brief to review."],
-              [ShieldCheck, "Enterprise clean", "Black, white, and gray with minimal clutter."],
+              [Cloud, "Provider-aware", "Seamless deployment topologies across Azure, AWS, and GCP with automated fallback chains."],
+              [Layers, "Guided workflow", "A visual interactive workspace that progresses your design from requirements brief to full HCL review."],
+              [ShieldCheck, "Enterprise security", "Enforce compliance audits (SOC2, PCI DSS) and private networking zones automatically."],
             ] as [LucideIcon, string, string][]
           ).map(([Icon, title, description]) => (
-            <div key={title} className="rounded-3xl border border-zinc-200 bg-white p-6">
-              <Icon className="h-5 w-5 text-zinc-950" />
-              <div className="mt-4 text-sm font-medium text-zinc-950">{title}</div>
-              <div className="mt-2 text-sm leading-6 text-zinc-600">{description}</div>
+            <div 
+              key={title} 
+              className="rounded-2xl border border-white/5 bg-[#090d16]/30 p-6 hover:border-cyan-500/10 transition-colors"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/5 border border-cyan-500/10 text-cyan-400">
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="mt-4 text-xs font-bold text-slate-200 uppercase font-mono tracking-wider">{title}</div>
+              <div className="mt-2 text-xs leading-relaxed text-slate-400">{description}</div>
             </div>
           ))}
         </div>
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-white/5 py-6 bg-[#030712] relative z-10 text-center">
+        <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+          © {new Date().getFullYear()} ArchGen AI Suite · All Rights Reserved
+        </p>
+      </footer>
     </div>
   );
 }

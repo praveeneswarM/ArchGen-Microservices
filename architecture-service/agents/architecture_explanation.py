@@ -25,9 +25,9 @@ class ArchitectureExplanationAgent(BaseAgent):
 
         if isinstance(raw_requirements, dict):
             app_desc = raw_requirements.get("app_description", "")
-            sec_reqs = raw_requirements.get("security_requirements", "")
-            perf_reqs = raw_requirements.get("performance_requirements", "")
-            tech_cons = raw_requirements.get("technical_constraints", "")
+            sec_reqs = raw_requirements.get("security_requirements", "") or raw_requirements.get("security_level", "")
+            perf_reqs = raw_requirements.get("performance_requirements", "") or f"Scalability: {raw_requirements.get('scalability_preference', '')}, Availability Target: {raw_requirements.get('availability_target', '')}, RTO: {raw_requirements.get('rto', '')}, RPO: {raw_requirements.get('rpo', '')}"
+            tech_cons = raw_requirements.get("technical_constraints", "") or f"Budget: {raw_requirements.get('monthly_budget', '')}, Region: {raw_requirements.get('region', '')}"
             cloud_prov = raw_requirements.get("cloud_provider", cloud_prov)
         else:
             app_desc = str(raw_requirements)

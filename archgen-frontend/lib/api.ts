@@ -10,6 +10,31 @@ const log = (msg: string, data?: unknown) => {
 
 // ─── Auth operations ───────────────────────────────────────────────────────
 
+export async function getCleanErrorMessage(response: Response, defaultMsg: string): Promise<string> {
+  const errText = await response.text();
+  try {
+    const parsed = JSON.parse(errText);
+    if (parsed.detail) {
+      if (Array.isArray(parsed.detail)) {
+        return parsed.detail.map((d: any) => {
+          if (d.loc && Array.isArray(d.loc) && d.loc.length > 0) {
+            const field = d.loc[d.loc.length - 1];
+            const fieldLabel = String(field).replace(/_/g, " ");
+            const capitalizedField = fieldLabel.charAt(0).toUpperCase() + fieldLabel.slice(1);
+            return `${capitalizedField}: ${d.msg}`;
+          }
+          return d.msg || "Invalid input";
+        }).join(". ");
+      } else if (typeof parsed.detail === "string") {
+        return parsed.detail;
+      }
+    }
+    return parsed.message || errText || defaultMsg;
+  } catch (e) {
+    return errText || defaultMsg;
+  }
+}
+
 export async function registerUser(
   username: string,
   password: string,
@@ -23,8 +48,8 @@ export async function registerUser(
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(errText || "Registration failed");
+    const message = await getCleanErrorMessage(response, "Registration failed");
+    throw new Error(message);
   }
 
   return response.json();
@@ -42,8 +67,8 @@ export async function loginUser(
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(errText || "Invalid username or password");
+    const message = await getCleanErrorMessage(response, "Invalid username or password");
+    throw new Error(message);
   }
 
   return response.json();

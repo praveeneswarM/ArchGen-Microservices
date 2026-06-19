@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
+from pydantic import BaseModel, Field, field_validator
+
 class RequirementInput(BaseModel):
     app_description: str
     expected_users: str
@@ -13,6 +15,42 @@ class RequirementInput(BaseModel):
     database_type: Optional[str] = None
     traffic_expectation: Optional[str] = None
     architecture_preference: Optional[str] = None
+    projectName: Optional[str] = None
+    region: Optional[str] = None
+    availability_target: Optional[str] = None
+    rto: Optional[str] = None
+    rpo: Optional[str] = None
+
+    @field_validator('app_description')
+    @classmethod
+    def validate_app_description(cls, v: str) -> str:
+        if len(v.strip()) < 15:
+            raise ValueError('Application description must be at least 15 characters long to ensure adequate context.')
+        return v
+
+    @field_validator('monthly_budget')
+    @classmethod
+    def validate_monthly_budget(cls, v: str) -> str:
+        import re
+        cleaned = re.sub(r'[^\d.]', '', v)
+        if not cleaned:
+            raise ValueError('Monthly budget must contain a valid numeric amount.')
+        try:
+            val = float(cleaned)
+            if val <= 0:
+                raise ValueError('Monthly budget must be a positive number.')
+        except ValueError:
+            raise ValueError('Monthly budget must be a valid number.')
+        return v
+
+    @field_validator('cloud_provider')
+    @classmethod
+    def validate_cloud_provider(cls, v: str) -> str:
+        provider = v.strip().lower()
+        if provider not in ['aws', 'azure', 'gcp']:
+            raise ValueError('Cloud provider must be one of: aws, azure, or gcp.')
+        return provider
+
 
 class ArchitectureResponse(BaseModel):
     nodes: List[Dict[str, Any]]

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
@@ -132,6 +132,54 @@ export default function DashboardPage() {
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
   const [projectVersions, setProjectVersions] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  // Toast System State & Refs
+  const [toasts, setToasts] = useState<Array<{ id: string; type: "success" | "info" | "warning" | "error"; title: string; message: string }>>([]);
+  const lastProcessedArchId = useRef<string | null>(null);
+  const lastProcessedTf = useRef<string | null>(null);
+
+  const showToast = useCallback((type: "success" | "info" | "warning" | "error", title: string, message: string) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  }, []);
+
+  // Monitor architecture changes to display live/fallback/mock toast status
+  useEffect(() => {
+    if (!architecture) {
+      lastProcessedArchId.current = null;
+      return;
+    }
+    const fingerprint = `${architecture.cloud_provider}-${architecture.nodes.length}-${architecture.active_provider}-${architecture.active_model}`;
+    if (lastProcessedArchId.current === fingerprint) return;
+    lastProcessedArchId.current = fingerprint;
+
+    const providerName = (architecture.active_provider || "").toLowerCase();
+    const modelName = architecture.active_model || "Deterministic";
+
+    if (providerName === "mock") {
+      showToast("info", "Mock Architecture Loaded", "Loaded mock resource nodes. AI agents are mocked.");
+    } else if (providerName === "deterministic" || providerName === "fallback") {
+      showToast("warning", "Fallback Architecture Rendered", "AI agents timed out or failed. Compiled using deterministic layout rules.");
+    } else if (providerName) {
+      showToast("success", "Live AI Architecture Generated", `Successfully generated cloud topology using Live ${architecture.active_provider} (${modelName}).`);
+    }
+  }, [architecture, showToast]);
+
+  // Monitor terraform HCL changes to display success toast
+  useEffect(() => {
+    if (!terraform) {
+      lastProcessedTf.current = null;
+      return;
+    }
+    const fingerprint = `${terraform.main_tf.length}-${terraform.variables_tf.length}`;
+    if (lastProcessedTf.current === fingerprint) return;
+    lastProcessedTf.current = fingerprint;
+
+    showToast("success", "Terraform HCL Compiled", "Multi-file Jinja2 templates rendered successfully based on visual node properties.");
+  }, [terraform, showToast]);
 
   // Requirement Config State
   const [projectName, setProjectName] = useState("Enterprise Stack");
@@ -1041,6 +1089,47 @@ export default function DashboardPage() {
             {activeTab === "settings" && renderSettingsTab()}
           </div>
         </main>
+      </div>
+      
+      {/* Premium Toast Notifications */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {toasts.map((t) => {
+          let borderClass = "border-cyan-500/30 shadow-cyan-500/5";
+          let iconColor = "text-cyan-400";
+          if (t.type === "success") {
+            borderClass = "border-emerald-500/30 shadow-emerald-500/5";
+            iconColor = "text-emerald-400";
+          } else if (t.type === "warning") {
+            borderClass = "border-amber-500/30 shadow-amber-500/5";
+            iconColor = "text-amber-400";
+          } else if (t.type === "error") {
+            borderClass = "border-rose-500/30 shadow-rose-500/5";
+            iconColor = "text-rose-400";
+          }
+          return (
+            <div
+              key={t.id}
+              className={`pointer-events-auto flex gap-3 p-4 rounded-xl bg-slate-950/95 border ${borderClass} shadow-xl backdrop-blur-md animate-fade-in`}
+            >
+              <div className={`mt-0.5 shrink-0 ${iconColor}`}>
+                {t.type === "success" && <CheckCircle2 className="w-5 h-5" />}
+                {t.type === "info" && <Sparkles className="w-5 h-5" />}
+                {t.type === "warning" && <AlertTriangle className="w-5 h-5" />}
+                {t.type === "error" && <AlertTriangle className="w-5 h-5" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-white leading-normal font-mono uppercase tracking-wider">{t.title}</h4>
+                <p className="text-[10px] text-slate-400 leading-normal mt-0.5 font-mono">{t.message}</p>
+              </div>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
+                className="text-[10px] text-slate-500 hover:text-white shrink-0 font-mono ml-auto"
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
       </div>
     </ErrorBoundary>
   );
