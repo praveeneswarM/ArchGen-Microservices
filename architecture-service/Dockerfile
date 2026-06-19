@@ -1,20 +1,15 @@
-# Use an official Python runtime as a parent image
-FROM python:3.12-slim
-
-# Set the working directory in the container
+FROM python:3.12-slim AS builder
 WORKDIR /app
-
-# Copy the requirements file to the working directory
 COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the current directory contents into the container at /app
+FROM python:3.12-slim
+WORKDIR /app
+RUN groupadd -r appgroup && useradd -m -r -g appgroup appuser
+COPY --chown=appuser:appgroup --from=builder /root/.local /home/appuser/.local
 COPY . .
-
-# Expose port 8003 to the outside world
+RUN chown -R appuser:appgroup /app
+USER appuser
+ENV PATH=/home/appuser/.local/bin:$PATH
 EXPOSE 8003
-
-# Command to run the service
 CMD ["python", "main.py"]
