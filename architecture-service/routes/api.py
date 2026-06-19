@@ -123,80 +123,8 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             
     return injected
 
-@router.get('/provider-status')
-async def get_provider_status():
-    manager = ProviderManager()
-    provider = await manager.get_available_provider()
-    return {
-        "active_provider": provider.lower(),
-        "model": manager.active_model,
-        "fallback_count": len(manager.fallback_chain) if manager.fallback_chain else 0,
-        "last_error": None # For now just return None
-    }
 
-@router.post('/generate-architecture', response_model=ArchitectureResponse)
-async def generate_architecture(requirements: RequirementInput, request: Request):
-    request_id = str(uuid.uuid4())
-    start_time = asyncio.get_event_loop().time()
-    
-    # 1. Check Cache
-    cached = cache_manager.get(requirements)
-    if cached:
-        c_nodes = cached.get('nodes', [])
-        if len(c_nodes) > 0:
-            exec_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
-            perf_logger.log(request_id, 'Cache', exec_ms / 1000.0, True, [], [])
-            cached['execution_time_ms'] = exec_ms
-            return ArchitectureResponse(**cached)
-
-    # 2. Deterministic Engine (Primary Generator)
-    llm_client = request.app.state.provider_manager
-    provider = requirements.cloud_provider.lower()
-    
-    logger.info("Running Deterministic Engine as Primary Generator")
-    reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
-    workload = reasoning_engine.classify_workload(requirements.app_description, requirements.expected_users)
-    raw_topology = reasoning_engine.synthesize_from_intent()
-    topology = reasoning_engine.normalize_topology(raw_topology)
-    
-    nodes = topology.get('nodes', [])
-    edges = topology.get('edges', [])
-    services = topology.get('services', [])
-    
-    # 3. Optional AI Enhancement Layer
-    ai_enhanced = False
-    active_provider = getattr(llm_client, 'active_provider', 'None')
-    
-    if active_provider and active_provider.lower() not in ['none', 'mock']:
-        try:
-            from agents.requirement_analysis import RequirementAnalysisAgent
-            from agents.architecture_planning import ArchitecturePlanningAgent
-            
-            req_agent = RequirementAnalysisAgent(client=llm_client)
-            plan_agent = ArchitecturePlanningAgent(client=llm_client)
-            
-            logger.info("Starting AI Requirement Analysis (Optional AI Enhancement)")
-            analysis = await req_agent.analyze(requirements)
-            
-            logger.info("Starting AI Architecture Planning (Optional AI Enhancement)")
-            ai_topology = await plan_agent.plan(analysis)
-            
-            ai_nodes = ai_topology.get('nodes', [])
-            ai_edges = ai_topology.get('edges', [])
-            ai_services = ai_topology.get('services', [])
-            
-            if ai_nodes:
-                nodes = ai_nodes
-                edges = ai_edges
-                services = ai_services
-                ai_enhanced = True
-                logger.info("AI Enhancement successfully generated topology via AI agents")
-        except Exception as e:
-            logger.warning(f"AI Enhancement failed to plan: {e}. Keeping deterministic baseline.")
-
-    # Ensure all required container nodes exist to prevent frontend crash
-    nodes = ensure_container_nodes(nodes, provider, requirements)
-
+def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements: Any) -> List[Dict[str, Any]]:
     # Post-process live/enhanced/deterministic topology to enforce user's custom inputs
     try:
         vnet_cidr_val = requirements.vnetCIDR or "10.0.0.0/16"
@@ -283,6 +211,94 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             node['data']['public'] = False
         if 'private' not in node['data']:
             node['data']['private'] = True
+            
+    return nodes
+
+
+@router.get('/provider-status')
+async def get_provider_status():
+    manager = ProviderManager()
+    provider = await manager.get_available_provider()
+    return {
+        "active_provider": provider.lower(),
+        "model": manager.active_model,
+        "fallback_count": len(manager.fallback_chain) if manager.fallback_chain else 0,
+        "last_error": None # For now just return None
+    }
+
+@router.post('/generate-architecture', response_model=ArchitectureResponse)
+async def generate_architecture(requirements: RequirementInput, request: Request):
+    request_id = str(uuid.uuid4())
+    start_time = asyncio.get_event_loop().time()
+    provider = requirements.cloud_provider.lower()
+    
+    # 1. Check Cache
+    cached = cache_manager.get(requirements)
+    if cached:
+        c_nodes = cached.get('nodes', [])
+        if len(c_nodes) > 0:
+            # Heal legacy/incomplete cached entry to ensure required containers exist
+            c_nodes = ensure_container_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
+            c_nodes = post_process_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
+            
+            cached['nodes'] = c_nodes
+            cached['node_count'] = len(c_nodes)
+            cached['subnet_count'] = len([n for n in c_nodes if n.get('type') == 'SubnetGroupNode'])
+            cached['edge_count'] = len(cached.get('edges', []))
+            
+            exec_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
+            perf_logger.log(request_id, 'Cache', exec_ms / 1000.0, True, [], [])
+            cached['execution_time_ms'] = exec_ms
+            return ArchitectureResponse(**cached)
+
+    # 2. Deterministic Engine (Primary Generator)
+    llm_client = request.app.state.provider_manager
+    provider = requirements.cloud_provider.lower()
+    
+    logger.info("Running Deterministic Engine as Primary Generator")
+    reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
+    workload = reasoning_engine.classify_workload(requirements.app_description, requirements.expected_users)
+    raw_topology = reasoning_engine.synthesize_from_intent()
+    topology = reasoning_engine.normalize_topology(raw_topology)
+    
+    nodes = topology.get('nodes', [])
+    edges = topology.get('edges', [])
+    services = topology.get('services', [])
+    
+    # 3. Optional AI Enhancement Layer
+    ai_enhanced = False
+    active_provider = getattr(llm_client, 'active_provider', 'None')
+    
+    if active_provider and active_provider.lower() not in ['none', 'mock']:
+        try:
+            from agents.requirement_analysis import RequirementAnalysisAgent
+            from agents.architecture_planning import ArchitecturePlanningAgent
+            
+            req_agent = RequirementAnalysisAgent(client=llm_client)
+            plan_agent = ArchitecturePlanningAgent(client=llm_client)
+            
+            logger.info("Starting AI Requirement Analysis (Optional AI Enhancement)")
+            analysis = await req_agent.analyze(requirements)
+            
+            logger.info("Starting AI Architecture Planning (Optional AI Enhancement)")
+            ai_topology = await plan_agent.plan(analysis)
+            
+            ai_nodes = ai_topology.get('nodes', [])
+            ai_edges = ai_topology.get('edges', [])
+            ai_services = ai_topology.get('services', [])
+            
+            if ai_nodes:
+                nodes = ai_nodes
+                edges = ai_edges
+                services = ai_services
+                ai_enhanced = True
+                logger.info("AI Enhancement successfully generated topology via AI agents")
+        except Exception as e:
+            logger.warning(f"AI Enhancement failed to plan: {e}. Keeping deterministic baseline.")
+
+    # Ensure all required container nodes exist and post-process them
+    nodes = ensure_container_nodes(nodes, provider, requirements)
+    nodes = post_process_nodes(nodes, provider, requirements)
             
     budget_val = 500.0
     try:
