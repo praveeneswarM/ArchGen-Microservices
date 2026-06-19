@@ -226,7 +226,7 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
                     node["data"]["label"] = f"Data Subnet ({ip_prefix}.3.0/24)"
                     
             # E. Update Compute engine Node Label
-            elif "aks" in n_id or "compute" in n_id or "cluster" in n_id or n_id == "aks-cluster":
+            elif n_id in ["aks-cluster", "compute", "cluster"] or (n_type == "BackendNode" and "cluster" in n_id and not any(x in n_id for x in ["pool", "ingress", "controller", "system", "user", "svc-"])):
                 node["data"] = node.get("data") or {}
                 node["data"]["label"] = f"{compute_name} Engine"
                 
@@ -636,7 +636,7 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
                     consistency_warnings.append(f"Consistency Gate: Node '{n_id}' has parentNode '{parent}' but CIDR subnet metadata '{subnet_meta}' mismatch.")
 
         # Check correct subnet placement (Private Endpoints in subnet-pe, Storage in subnet-data)
-        is_pe = "pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower
+        is_pe = ("pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower) and n_type != "SubnetGroupNode"
         if is_pe:
             if parent != "subnet-pe":
                 consistency_warnings.append(f"Consistency Gate: Private Endpoint '{n_id}' must live in 'subnet-pe'.")
@@ -644,7 +644,7 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
         is_storage_resource = (
             n_type in ["DatabaseNode", "CacheNode", "StorageNode"] or
             any(db_kw in n_id_lower or db_kw in lbl_lower for db_kw in ["db-", "database", "postgresql", "mysql", "redis", "storage-account", "blob"])
-        ) and not is_pe
+        ) and not is_pe and parent != "vnet-group"
         if is_storage_resource:
             if parent != "subnet-data":
                 consistency_warnings.append(f"Consistency Gate: Storage resource '{n_id}' must live in 'subnet-data'.")
@@ -705,12 +705,16 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                 c_edges = merged_edges
                 cached['edges'] = c_edges
             
+            valid_node_ids = {n.get("id") for n in c_nodes if n.get("id")}
+            c_edges = [e for e in c_edges if e.get("source") in valid_node_ids and e.get("target") in valid_node_ids]
+
             cached['services'] = rebuild_services_registry(c_nodes)
             cached['warnings'] = validate_and_gate_architecture(c_nodes, c_edges, cached.get('warnings', []))
             cached['nodes'] = c_nodes
             cached['node_count'] = len(c_nodes)
             cached['subnet_count'] = len([n for n in c_nodes if n.get('type') == 'SubnetGroupNode'])
             cached['edge_count'] = len(c_edges)
+            cached['edges'] = c_edges
             
             exec_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
             perf_logger.log(request_id, 'Cache', exec_ms / 1000.0, True, [], [])
@@ -826,6 +830,9 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             secured_res, complexity_res, cost_res, explanation_res = await asyncio.wait_for(run_enrichments(), timeout=60.0)
         except Exception as e:
             logger.warning(f'Optional AI Enrichment failed or timed out: {e}')
+
+    valid_node_ids = {n.get("id") for n in nodes if n.get("id")}
+    edges = [e for e in edges if e.get("source") in valid_node_ids and e.get("target") in valid_node_ids]
 
     terraform_modules = list(set([n.get('type', 'Module') for n in nodes]))
 
