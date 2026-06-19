@@ -118,28 +118,74 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
 
   const result: Node[] = [];
 
-  // Define Subnet Sizes dynamically based on child node counts
-  const subnetConfig: Record<
-    string,
-    { label: string; x: number; y: number; width: number; height: number; colStep: number; rowStep: number }
-  > = {
-    "subnet-ingress": { label: getSubnetLabel("subnet-ingress", "Ingress Subnet (10.0.1.0/24)"), x: 40, y: 60, width: 660, height: 340, colStep: 320, rowStep: 130 },
-    "subnet-mgmt": { label: getSubnetLabel("subnet-mgmt", "Management Subnet (10.0.4.0/24)"), x: 740, y: 60, width: 660, height: 620, colStep: 320, rowStep: 130 },
-    "subnet-pe": { label: getSubnetLabel("subnet-pe", "Private Endpoint Subnet (10.0.5.0/24)"), x: 1440, y: 60, width: 400, height: 450, colStep: 320, rowStep: 130 },
-    "subnet-app": { label: getSubnetLabel("subnet-app", "Application Subnet (10.0.2.0/24)"), x: 40, y: 720, width: 1800, height: 340, colStep: 350, rowStep: 130 },
-    "subnet-data": { label: getSubnetLabel("subnet-data", "Data Subnet (10.0.3.0/24)"), x: 40, y: 1100, width: 1800, height: 340, colStep: 350, rowStep: 130 },
+  // Calculate Subnet Sizes dynamically based on child node counts
+  const subnetDimensions: Record<string, { width: number; height: number; itemsPerRow: number; colStep: number; rowStep: number }> = {};
+  
+  const getSubnetDims = (subnetId: string, childNodes: Node[], baseWidth: number) => {
+    const padding = 40;
+    if (childNodes.length === 0) {
+      return { width: 320, height: 140, itemsPerRow: 1, colStep: 320, rowStep: 130 };
+    }
+    let colStep = 320;
+    let rowStep = 130;
+    if (subnetId === "subnet-app" || subnetId === "subnet-data") {
+      colStep = 350;
+    }
+    
+    // How many items fit in a row based on the width
+    const itemsPerRow = Math.max(1, Math.floor(1 + (baseWidth - padding - 256) / colStep));
+    const cols = Math.min(childNodes.length, itemsPerRow);
+    const rows = Math.ceil(childNodes.length / itemsPerRow);
+    
+    const subWidth = Math.max(baseWidth, (cols - 1) * colStep + padding + 256);
+    const subHeight = Math.max(140, rows * rowStep + 80);
+    return { width: subWidth, height: subHeight, itemsPerRow, colStep, rowStep };
   };
 
-  // Build the 4-level nesting hierarchy:
-  // Region -> Resource Group -> VNet -> Subnets
+  // Row 1 widths
+  subnetDimensions["subnet-ingress"] = getSubnetDims("subnet-ingress", subnetMapping["subnet-ingress"], 500);
+  subnetDimensions["subnet-mgmt"] = getSubnetDims("subnet-mgmt", subnetMapping["subnet-mgmt"], 500);
+  subnetDimensions["subnet-pe"] = getSubnetDims("subnet-pe", subnetMapping["subnet-pe"], 320);
+
+  const row1Gap = 40;
+  const ingressX = 40;
+  const mgmtX = ingressX + subnetDimensions["subnet-ingress"].width + row1Gap;
+  const peX = mgmtX + subnetDimensions["subnet-mgmt"].width + row1Gap;
+  const row1Width = peX + subnetDimensions["subnet-pe"].width;
+  const row1Height = Math.max(
+    subnetDimensions["subnet-ingress"].height,
+    subnetDimensions["subnet-mgmt"].height,
+    subnetDimensions["subnet-pe"].height
+  );
+
+  // Row 2 and 3 can stretch to cover the row1Width
+  const stretchedWidth = row1Width - 40;
+  subnetDimensions["subnet-app"] = getSubnetDims("subnet-app", subnetMapping["subnet-app"], stretchedWidth);
+  subnetDimensions["subnet-data"] = getSubnetDims("subnet-data", subnetMapping["subnet-data"], stretchedWidth);
+
+  const appX = 40;
+  const appY = 60 + row1Height + 40;
   
+  const dataX = 40;
+  const dataY = appY + subnetDimensions["subnet-app"].height + 40;
+
+  // Bounding box of all subnets relative to vnet-group
+  const vnetWidth = row1Width + 40;
+  const vnetHeight = dataY + subnetDimensions["subnet-data"].height + 60;
+
+  const rgWidth = vnetWidth + 60;
+  const rgHeight = vnetHeight + 90;
+
+  const regionWidth = rgWidth + 60;
+  const regionHeight = rgHeight + 90;
+
   // Outer Region node
   result.push({
     id: "region-group",
     type: "RegionGroupNode",
     position: { x: 50, y: 50 },
     data: { label: regionLabel },
-    style: { width: 2000, height: 1520 },
+    style: { width: regionWidth, height: regionHeight },
     zIndex: 1,
   });
 
@@ -150,7 +196,7 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     parentNode: "region-group",
     position: { x: 30, y: 60 },
     data: { label: rgLabel },
-    style: { width: 1940, height: 1430 },
+    style: { width: rgWidth, height: rgHeight },
     zIndex: 2,
   });
 
@@ -161,49 +207,46 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     parentNode: "rg-group",
     position: { x: 30, y: 60 },
     data: { label: vnetLabel },
-    style: { width: 1880, height: 1340 },
+    style: { width: vnetWidth, height: vnetHeight },
     zIndex: 3,
   });
 
-  // Render subnets and children inside the VNet
-  Object.entries(subnetMapping).forEach(([subnetId, childNodes]) => {
-    const cfg = subnetConfig[subnetId];
-    if (!cfg) return;
+  // Subnet configurations for positioning
+  const subnetPositions: Record<string, { x: number; y: number }> = {
+    "subnet-ingress": { x: ingressX, y: 60 },
+    "subnet-mgmt": { x: mgmtX, y: 60 },
+    "subnet-pe": { x: peX, y: 60 },
+    "subnet-app": { x: appX, y: appY },
+    "subnet-data": { x: dataX, y: dataY },
+  };
 
-    // Dynamically expand subnet sizes if child count exceeds base layout capacity
-    const padding = 40;
-    const itemsPerRow = Math.max(1, Math.floor(1 + (cfg.width - padding - 256) / cfg.colStep));
-    const rows = Math.ceil(childNodes.length / itemsPerRow);
-    
-    let subWidth = cfg.width;
-    let subHeight = cfg.height;
-    if (childNodes.length > 0) {
-      if (childNodes.length > itemsPerRow) {
-        subHeight = Math.max(cfg.height, rows * cfg.rowStep + 80);
-      }
-      const cols = Math.min(childNodes.length, itemsPerRow);
-      const neededWidth = (cols - 1) * cfg.colStep + padding + 256;
-      subWidth = Math.max(cfg.width, neededWidth);
-    }
+  // Render subnets and children inside the VNet
+  const subnetList = ["subnet-ingress", "subnet-mgmt", "subnet-pe", "subnet-app", "subnet-data"];
+  subnetList.forEach((subnetId) => {
+    const childNodes = subnetMapping[subnetId] || [];
+    const dims = subnetDimensions[subnetId];
+    const pos = subnetPositions[subnetId];
+    const label = getSubnetLabel(subnetId, subnetId === "subnet-ingress" ? "Ingress Subnet (10.0.1.0/24)" : subnetId === "subnet-mgmt" ? "Management Subnet (10.0.4.0/24)" : subnetId === "subnet-pe" ? "Private Endpoint Subnet (10.0.5.0/24)" : subnetId === "subnet-app" ? "Application Subnet (10.0.2.0/24)" : "Data Subnet (10.0.3.0/24)");
 
     // Add Subnet Group Node
     result.push({
       id: subnetId,
       type: "SubnetGroupNode",
       parentNode: "vnet-group",
-      position: { x: cfg.x, y: cfg.y },
-      data: { label: cfg.label, width: subWidth, height: subHeight },
-      style: { width: subWidth, height: subHeight },
+      position: { x: pos.x, y: pos.y },
+      data: { label: label, width: dims.width, height: dims.height },
+      style: { width: dims.width, height: dims.height },
       zIndex: 4,
     });
 
     // Position resources inside their respective subnet relative coordinates
+    const padding = 40;
     childNodes.forEach((node, index) => {
-      const row = Math.floor(index / itemsPerRow);
-      const col = index % itemsPerRow;
+      const row = Math.floor(index / dims.itemsPerRow);
+      const col = index % dims.itemsPerRow;
       
-      const childX = padding + col * cfg.colStep;
-      const childY = 60 + row * cfg.rowStep;
+      const childX = padding + col * dims.colStep;
+      const childY = 60 + row * dims.rowStep;
 
       result.push({
         ...node,
