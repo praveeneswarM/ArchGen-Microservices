@@ -47,7 +47,7 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "label": f"Cloud Region: {requirements.region.upper() if requirements.region else 'EAST US'}",
             "parentNode": None,
             "position": {"x": 0.0, "y": 0.0},
-            "style": {"width": 2900.0, "height": 1780.0},
+            "style": {"width": 2900.0, "height": 2280.0},
             "data": {"provider": provider, "resource_type": "region"}
         },
         {
@@ -56,7 +56,7 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "label": f"Resource Scope: {requirements.resourceGroup or 'rg-production'}",
             "parentNode": "region-group",
             "position": {"x": 30.0, "y": 45.0},
-            "style": {"width": 2840.0, "height": 1690.0},
+            "style": {"width": 2840.0, "height": 2190.0},
             "data": {"provider": provider, "resource_type": "resourcegroup"}
         },
         {
@@ -65,7 +65,7 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "label": f"Virtual Network (VPC): {requirements.vnetCIDR or '10.0.0.0/16'}",
             "parentNode": "rg-group",
             "position": {"x": 30.0, "y": 45.0},
-            "style": {"width": 2780.0, "height": 1600.0},
+            "style": {"width": 2780.0, "height": 2100.0},
             "data": {"provider": provider, "resource_type": "vnet"}
         },
         {
@@ -74,7 +74,7 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "label": "Ingress Subnet (10.0.1.0/24)",
             "parentNode": "vnet-group",
             "position": {"x": 40.0, "y": 60.0},
-            "style": {"width": 700.0, "height": 400.0},
+            "style": {"width": 2180.0, "height": 280.0},
             "data": {"subnet": "subnet-ingress", "provider": provider, "resource_type": "subnet"}
         },
         {
@@ -82,8 +82,8 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "type": "SubnetGroupNode",
             "label": "Management Subnet (10.0.4.0/24)",
             "parentNode": "vnet-group",
-            "position": {"x": 780.0, "y": 60.0},
-            "style": {"width": 1000.0, "height": 600.0},
+            "position": {"x": 40.0, "y": 380.0},
+            "style": {"width": 2180.0, "height": 280.0},
             "data": {"subnet": "subnet-mgmt", "provider": provider, "resource_type": "subnet"}
         },
         {
@@ -91,8 +91,8 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "type": "SubnetGroupNode",
             "label": "Private Endpoint Subnet (10.0.5.0/24)",
             "parentNode": "vnet-group",
-            "position": {"x": 1820.0, "y": 60.0},
-            "style": {"width": 900.0, "height": 600.0},
+            "position": {"x": 40.0, "y": 1620.0},
+            "style": {"width": 2180.0, "height": 420.0},
             "data": {"subnet": "subnet-pe", "provider": provider, "resource_type": "subnet"}
         },
         {
@@ -100,8 +100,8 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "type": "SubnetGroupNode",
             "label": "Application Subnet (10.0.2.0/24)",
             "parentNode": "vnet-group",
-            "position": {"x": 40.0, "y": 720.0},
-            "style": {"width": 2680.0, "height": 400.0},
+            "position": {"x": 40.0, "y": 700.0},
+            "style": {"width": 2180.0, "height": 420.0},
             "data": {"subnet": "subnet-app", "provider": provider, "resource_type": "subnet"}
         },
         {
@@ -110,7 +110,7 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             "label": "Data Subnet (10.0.3.0/24)",
             "parentNode": "vnet-group",
             "position": {"x": 40.0, "y": 1160.0},
-            "style": {"width": 2680.0, "height": 400.0},
+            "style": {"width": 2180.0, "height": 420.0},
             "data": {"subnet": "subnet-data", "provider": provider, "resource_type": "subnet"}
         }
     ]
@@ -139,17 +139,8 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             # Enforce parentNode on the existing container node to heal any detached structures
             existing_node = nodes_map[c_id_lower]
             existing_node["parentNode"] = container_parent_map[c_id]
-            
-            # Reset coordinates if they are outside reasonable relative boundary offsets
-            pos = existing_node.get("position", {})
-            try:
-                x_val = float(pos.get("x", 0) if pos.get("x") is not None else 0)
-                y_val = float(pos.get("y", 0) if pos.get("y") is not None else 0)
-            except (ValueError, TypeError):
-                x_val, y_val = 0.0, 0.0
-                
-            if x_val < 0 or y_val < -100 or x_val > 3000 or y_val > 2500:
-                existing_node["position"] = container["position"]
+            existing_node["position"] = container["position"]
+            existing_node["style"] = container["style"]
             
     return injected
 
@@ -171,6 +162,39 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
             n_id = str(node.get("id", "")).lower()
             n_type = str(node.get("type", ""))
             
+            # Fallback type mapping for unregistered node types (blank rectangles fix)
+            ALLOWED_TYPES = {
+                "GatewayNode", "FrontendNode", "BackendNode", "DatabaseNode", "CacheNode", 
+                "StorageNode", "SecurityNode", "MonitoringNode", "RegionGroupNode", 
+                "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"
+            }
+            if n_type not in ALLOWED_TYPES:
+                lbl_lower = str(node.get("data", {}).get("label", "")).lower()
+                mapped_type = "BackendNode"
+                if "pe-" in n_id or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower:
+                    mapped_type = "SecurityNode"
+                elif "backup" in n_id or "backup" in lbl_lower:
+                    mapped_type = "StorageNode"
+                elif "recovery" in n_id or "recovery" in lbl_lower:
+                    mapped_type = "SecurityNode"
+                elif any(x in n_id or x in lbl_lower for x in ["vault", "keyvault", "identity", "role", "waf", "ddos"]):
+                    mapped_type = "SecurityNode"
+                elif any(x in n_id or x in lbl_lower for x in ["db-", "database", "postgres", "mysql", "sql", "cosmos"]):
+                    mapped_type = "DatabaseNode"
+                elif any(x in n_id or x in lbl_lower for x in ["redis", "cache"]):
+                    mapped_type = "CacheNode"
+                elif any(x in n_id or x in lbl_lower for x in ["storage", "blob", "bucket"]):
+                    mapped_type = "StorageNode"
+                elif any(x in n_id or x in lbl_lower for x in ["log-analytics", "insights", "monitor", "alert", "diagnostic"]):
+                    mapped_type = "MonitoringNode"
+                elif any(x in n_id or x in lbl_lower for x in ["gateway", "firewall", "ingress", "loadbalancer", "lb"]):
+                    mapped_type = "GatewayNode"
+                elif any(x in n_id or x in lbl_lower for x in ["frontend", "web", "spa"]):
+                    mapped_type = "FrontendNode"
+                
+                node["type"] = mapped_type
+                n_type = mapped_type
+
             # A. Update Region Node Label
             if n_type == "RegionGroupNode" or "region" in n_id:
                 node["data"] = node.get("data") or {}
@@ -250,21 +274,33 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
             
             # If still no parentNode, infer from node ID / label / type
             if not node.get("parentNode"):
-                inferred_subnet = ""
-                if "pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower:
-                    inferred_subnet = "subnet-pe"
+                inferred_parent = ""
+                # Shared resources go to vnet-group
+                is_shared = (
+                    "keyvault" in n_id_lower or "vault" in n_id_lower or
+                    "log-analytics" in n_id_lower or "log analytics" in lbl_lower or
+                    "app-insights" in n_id_lower or "app insights" in lbl_lower or
+                    "azure-monitor" in n_id_lower or "azure monitor" in lbl_lower or
+                    "backup-vault" in n_id_lower or "backup vault" in lbl_lower or
+                    "recovery-vault" in n_id_lower or "recovery services vault" in lbl_lower
+                ) and not any(x in n_id_lower or x in lbl_lower for x in ["pe-", "private endpoint", "private-endpoint"])
+
+                if is_shared:
+                    inferred_parent = "vnet-group"
+                elif "pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower:
+                    inferred_parent = "subnet-pe"
                 elif any(db_kw in n_id_lower or db_kw in lbl_lower for db_kw in ["db-", "database", "postgresql", "mysql", "redis", "storage-account", "blob", "replica"]):
-                    inferred_subnet = "subnet-data"
+                    inferred_parent = "subnet-data"
                 elif any(svc_kw in n_id_lower for svc_kw in ["svc-", "aks-"]):
-                    inferred_subnet = "subnet-app"
+                    inferred_parent = "subnet-app"
                 elif any(mgmt_kw in n_id_lower or mgmt_kw in lbl_lower for mgmt_kw in ["vault", "keyvault", "bastion", "log-analytics", "app-insights", "azure-monitor", "alerts", "managed-identity", "role-assignment"]):
-                    inferred_subnet = "subnet-mgmt"
+                    inferred_parent = "subnet-mgmt"
                 elif any(ing_kw in n_id_lower or ing_kw in lbl_lower for ing_kw in ["app-gateway", "azure-firewall", "waf", "ingress"]):
-                    inferred_subnet = "subnet-ingress"
+                    inferred_parent = "subnet-ingress"
                 
-                if inferred_subnet:
-                    node["parentNode"] = inferred_subnet
-                    node["data"]["subnet"] = inferred_subnet
+                if inferred_parent:
+                    node["parentNode"] = inferred_parent
+                    node["data"]["subnet"] = inferred_parent
 
         # Reset out-of-bounds coordinates if they are outside reasonable relative boundary offsets
         parent = node.get("parentNode")
@@ -278,6 +314,31 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
             
             if x_val < 0 or x_val > 1500 or y_val < 0 or y_val > 1500 or y_val < -50:
                 node["position"] = {"x": float(30 + (idx % 3) * 200), "y": float(60 + (idx // 3) * 100)}
+
+        # Reset out-of-bounds coordinates for VNet-scoped shared resources (Column 6 alignment)
+        if parent == "vnet-group":
+            pos = node.get("position", {})
+            try:
+                x_val = float(pos.get("x", 0) if pos.get("x") is not None else 0)
+                y_val = float(pos.get("y", 0) if pos.get("y") is not None else 0)
+            except (ValueError, TypeError):
+                x_val, y_val = 0.0, 0.0
+            
+            if x_val < 2000 or x_val > 2700 or y_val < 0 or y_val > 2100:
+                y_map = {
+                    "keyvault": 100.0,
+                    "log-analytics": 220.0,
+                    "app-insights": 340.0,
+                    "azure-monitor": 460.0,
+                    "backup-vault": 580.0,
+                    "recovery-vault": 700.0
+                }
+                default_y = 100.0
+                for kw, y_pos in y_map.items():
+                    if kw in n_id_lower or kw in lbl_lower:
+                        default_y = y_pos
+                        break
+                node["position"] = {"x": 2300.0, "y": default_y}
 
         # Metadata Normalization: strip customMetadata from infrastructure nodes
         is_infra = False
@@ -357,6 +418,72 @@ def rebuild_services_registry(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any
     return services
 
 
+def deduplicate_shared_resources(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> tuple:
+    # Categories and matchers for global env-wide shared resources
+    categories = {
+        "keyvault": lambda nid, lbl: ("vault" in nid or "keyvault" in nid or "vault" in lbl or "key vault" in lbl) and not any(x in nid or x in lbl for x in ["backup", "recovery", "pe-kv", "pe-"]),
+        "log-analytics": lambda nid, lbl: "log-analytics" in nid or "log analytics" in lbl or "loganalytics" in nid,
+        "azure-monitor": lambda nid, lbl: ("monitor" in nid or "monitor" in lbl) and not any(x in nid or x in lbl for x in ["log-analytics", "log analytics", "app-insights", "app insights", "insights", "alerts", "diagnostic"]),
+        "app-insights": lambda nid, lbl: "app-insights" in nid or "app insights" in lbl or "insights" in nid or "insights" in lbl,
+        "backup-vault": lambda nid, lbl: "backup-vault" in nid or "backup vault" in lbl or "recovery-vault" in nid or "recovery services vault" in lbl,
+        "storage-account": lambda nid, lbl: ("storage-account" in nid or "storage account" in lbl or "blob" in nid or "blob" in lbl) and not any(x in nid or x in lbl for x in ["replica", "pe-storage", "pe-", "backup"])
+    }
+    
+    retained_nodes = {}  # category -> node_id
+    nodes_to_remove = set()
+    node_id_map = {}     # duplicate_node_id -> retained_node_id
+    
+    # First pass: identify duplicates
+    for node in nodes:
+        n_type = node.get("type", "")
+        if n_type in ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"]:
+            continue
+        nid = str(node.get("id", "")).lower()
+        lbl = str(node.get("data", {}).get("label", "")).lower()
+        
+        matched_category = None
+        for cat, matcher in categories.items():
+            if matcher(nid, lbl):
+                matched_category = cat
+                break
+        
+        if matched_category:
+            if matched_category in retained_nodes:
+                nodes_to_remove.add(node.get("id"))
+                node_id_map[node.get("id")] = retained_nodes[matched_category]
+            else:
+                retained_nodes[matched_category] = node.get("id")
+                
+    if not nodes_to_remove:
+        return nodes, edges
+        
+    new_nodes = [n for n in nodes if n.get("id") not in nodes_to_remove]
+    
+    new_edges = []
+    seen_edges = set()
+    for edge in edges:
+        src = edge.get("source")
+        tgt = edge.get("target")
+        
+        new_src = node_id_map.get(src, src)
+        new_tgt = node_id_map.get(tgt, tgt)
+        
+        if new_src == new_tgt:
+            continue
+        edge_key = (new_src, new_tgt)
+        if edge_key in seen_edges:
+            continue
+            
+        seen_edges.add(edge_key)
+        new_edge = dict(edge)
+        new_edge["source"] = new_src
+        new_edge["target"] = new_tgt
+        new_edge["id"] = f"e-{new_src}-{new_tgt}"
+        new_edges.append(new_edge)
+        
+    return new_nodes, new_edges
+
+
 def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], complexity_warnings: List[str] = None) -> List[str]:
     if complexity_warnings is None:
         complexity_warnings = []
@@ -431,6 +558,44 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     has_security = any(t == "SecurityNode" or "vault" in nid.lower() or "key" in nid.lower() for nid, t in zip(node_ids, node_types))
     if not has_security:
         validation_findings.append("Quality Gate: Security vault/secrets resources are missing.")
+
+    # 1a. V3 Gating Enhancements
+    # Check duplicate shared resources
+    kv_count = len([n for n in nodes if ("vault" in str(n.get("id")).lower() or "keyvault" in str(n.get("id")).lower() or "key vault" in str(n.get("data", {}).get("label", "")).lower()) and not any(x in str(n.get("id")).lower() for x in ["backup", "recovery", "pe-kv", "pe-"])])
+    if kv_count > 1:
+        validation_findings.append(f"Quality Gate: Duplicate shared Key Vault detected ({kv_count} instances).")
+
+    law_count = len([n for n in nodes if "log-analytics" in str(n.get("id")).lower() or "log analytics" in str(n.get("data", {}).get("label", "")).lower() or "loganalytics" in str(n.get("id")).lower()])
+    if law_count > 1:
+        validation_findings.append(f"Quality Gate: Duplicate shared Log Analytics Workspace detected ({law_count} instances).")
+
+    mon_count = len([n for n in nodes if ("monitor" in str(n.get("id")).lower() or "monitor" in str(n.get("data", {}).get("label", "")).lower()) and not any(x in str(n.get("id")).lower() for x in ["log-analytics", "log analytics", "app-insights", "app insights", "insights", "alerts", "diagnostic"])])
+    if mon_count > 1:
+        validation_findings.append(f"Quality Gate: Duplicate shared Azure Monitor detected ({mon_count} instances).")
+
+    ai_count = len([n for n in nodes if "app-insights" in str(n.get("id")).lower() or "app insights" in str(n.get("data", {}).get("label", "")).lower() or "insights" in str(n.get("id")).lower()])
+    if ai_count > 1:
+        validation_findings.append(f"Quality Gate: Duplicate shared Application Insights detected ({ai_count} instances).")
+
+    bv_count = len([n for n in nodes if "backup-vault" in str(n.get("id")).lower() or "backup vault" in str(n.get("data", {}).get("label", "")).lower() or "recovery-vault" in str(n.get("id")).lower() or "recovery services vault" in str(n.get("data", {}).get("label", "")).lower()])
+    if bv_count > 1:
+        validation_findings.append(f"Quality Gate: Duplicate shared Backup/Recovery Vault detected ({bv_count} instances).")
+
+    # Fail validation if subnet-pe is empty
+    pe_subnet_nodes = [n for n in nodes if n.get("parentNode") == "subnet-pe"]
+    if len(pe_subnet_nodes) == 0:
+        validation_findings.append("Quality Gate: Private Endpoint Subnet ('subnet-pe') is empty.")
+
+    # Fail validation if node renderer cannot resolve a node type
+    ALLOWED_TYPES = {
+        "GatewayNode", "FrontendNode", "BackendNode", "DatabaseNode", "CacheNode", 
+        "StorageNode", "SecurityNode", "MonitoringNode", "RegionGroupNode", 
+        "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"
+    }
+    for node in nodes:
+        n_type = node.get("type")
+        if n_type not in ALLOWED_TYPES:
+            validation_findings.append(f"Quality Gate: Node renderer cannot resolve node type '{n_type}' for node '{node.get('id')}'.")
 
 
     # 2. Consistency Gate Checks
@@ -513,8 +678,10 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             c_nodes = ensure_container_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
             c_nodes = post_process_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
             
-            # Heal missing edges in the cached entry if edge count is low
             c_edges = cached.get('edges', [])
+            c_nodes, c_edges = deduplicate_shared_resources(c_nodes, c_edges)
+            
+            # Heal missing edges in the cached entry if edge count is low
             if len(c_edges) < 35:
                 reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
                 raw_topology = reasoning_engine.synthesize_from_intent()
@@ -617,6 +784,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     # Ensure all required container nodes exist and post-process them
     nodes = ensure_container_nodes(nodes, provider, requirements)
     nodes = post_process_nodes(nodes, provider, requirements)
+    nodes, edges = deduplicate_shared_resources(nodes, edges)
             
     budget_val = 500.0
     try:
