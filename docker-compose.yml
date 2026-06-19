@@ -59,6 +59,8 @@ services:
       - "8003:8003"
     env_file:
       - ./architecture-service/.env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - mongo
 
