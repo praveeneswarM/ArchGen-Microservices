@@ -129,12 +129,13 @@ class ProviderManager:
         self.fallback_chain = []
         
         provider = await self.get_available_provider()
+        timeout_val = int(os.getenv('MAX_PROVIDER_TIMEOUT', '120'))
         
         # Attempt OpenAI
         if provider == 'OpenAI' and self.openai_client:
             try:
                 self.fallback_chain.append('OpenAI')
-                res = await self._call_openai(self.openai_client, self.active_model, system_prompt, user_prompt, timeout=45)
+                res = await self._call_openai(self.openai_client, self.active_model, system_prompt, user_prompt, timeout=timeout_val)
                 self._log_telemetry(start_time, 'OpenAI', self.fallback_chain)
                 return res
             except Exception as e:
@@ -146,7 +147,7 @@ class ProviderManager:
             try:
                 if 'DeepSeek' not in self.fallback_chain:
                     self.fallback_chain.append('DeepSeek')
-                res = await self._call_openai(self.deepseek_client, 'deepseek-chat', system_prompt, user_prompt, timeout=45)
+                res = await self._call_openai(self.deepseek_client, 'deepseek-chat', system_prompt, user_prompt, timeout=timeout_val)
                 self._log_telemetry(start_time, 'DeepSeek', self.fallback_chain)
                 return res
             except Exception as e:
