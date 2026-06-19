@@ -86,12 +86,33 @@ class InfrastructureReasoningEngine:
                 "keyvault": "Azure Key Vault",
                 "blob": "Azure Blob Storage",
                 "acr": "Azure Container Registry",
-                "log_analytics": "Azure Log Analytics",
+                "log_analytics": "Azure Log Analytics Workspace",
                 "app_insights": "Application Insights",
                 "bastion": "Azure Bastion",
                 "backup": "Azure Backup Vault",
                 "iam": "Microsoft Entra ID",
-                "pe": "Azure Private Endpoint"
+                "pe": "Azure Private Endpoint",
+                "nsg": "Network Security Group (NSG)",
+                "rt": "Route Table (RT)",
+                "internet": "Public Internet Gateway",
+                "front_door": "Azure Front Door",
+                "ddos": "Azure DDoS Protection Plan",
+                "waf_policy": "Web Application Firewall (WAF) Policy",
+                "azure_firewall": "Azure Firewall",
+                "firewall_policy": "Azure Firewall Policy",
+                "aks_cluster": "Azure Kubernetes Service (AKS) Cluster",
+                "aks_system": "AKS System Node Pool",
+                "aks_user": "AKS User Node Pool",
+                "ingress_controller": "AKS Ingress Controller",
+                "managed_identity": "User Assigned Managed Identity",
+                "role_assignment": "Azure Role Assignment",
+                "azure_monitor": "Azure Monitor Dashboard",
+                "alerts": "Azure Monitor Alerts",
+                "diagnostic_settings": "Diagnostic Settings",
+                "backup_policy": "PostgreSQL Backup Policy",
+                "backup_vault": "Azure Backup Vault",
+                "recovery_vault": "Recovery Services Vault",
+                "dns": "Azure DNS Zone"
             },
             "aws": {
                 "cdn": "AWS CloudFront",
@@ -117,7 +138,28 @@ class InfrastructureReasoningEngine:
                 "bastion": "AWS Session Manager / Bastion",
                 "backup": "AWS Backup",
                 "iam": "AWS IAM",
-                "pe": "VPC Endpoint"
+                "pe": "VPC Endpoint",
+                "nsg": "VPC Security Group",
+                "rt": "VPC Route Table",
+                "internet": "AWS Internet Gateway",
+                "front_door": "AWS CloudFront CDN",
+                "ddos": "AWS Shield Advanced",
+                "waf_policy": "AWS WAF WebACL",
+                "azure_firewall": "AWS Network Firewall",
+                "firewall_policy": "AWS Firewall Rule Group",
+                "aks_cluster": "Amazon EKS Cluster",
+                "aks_system": "EKS System Node Group",
+                "aks_user": "EKS User Node Group",
+                "ingress_controller": "EKS Ingress Controller",
+                "managed_identity": "AWS IAM Role",
+                "role_assignment": "IAM Policy Attachment",
+                "azure_monitor": "Amazon CloudWatch Dashboard",
+                "alerts": "CloudWatch Alarm Rules",
+                "diagnostic_settings": "CloudWatch Subscription Filter",
+                "backup_policy": "AWS Backup Plan",
+                "backup_vault": "AWS Backup Vault",
+                "recovery_vault": "AWS Backup Vault (DR)",
+                "dns": "Route53 Hosted Zone"
             },
             "gcp": {
                 "cdn": "Cloud CDN",
@@ -144,7 +186,27 @@ class InfrastructureReasoningEngine:
                 "backup": "Cloud Backup and DR",
                 "iam": "Cloud IAM",
                 "pe": "Private Service Connect",
-                "dns": "Cloud DNS"
+                "dns": "Cloud DNS",
+                "nsg": "VPC Firewall Rules",
+                "rt": "VPC Route Table",
+                "internet": "Google Cloud Cloud NAT",
+                "front_door": "Google Cloud CDN",
+                "ddos": "Google Cloud Armor DDoS",
+                "waf_policy": "Cloud Armor WAF Policy",
+                "azure_firewall": "Cloud Next-Gen Firewall",
+                "firewall_policy": "Firewall Policy",
+                "aks_cluster": "Google GKE Cluster",
+                "aks_system": "GKE System Node Pool",
+                "aks_user": "GKE User Node Pool",
+                "ingress_controller": "GKE Ingress Controller",
+                "managed_identity": "GCP Service Account",
+                "role_assignment": "IAM Policy Binding",
+                "azure_monitor": "Google Cloud Monitoring",
+                "alerts": "Cloud Monitoring Alerts",
+                "diagnostic_settings": "Google Cloud Log Sink",
+                "backup_policy": "Cloud SQL Backup Plan",
+                "backup_vault": "Google Cloud Backup Vault",
+                "recovery_vault": "Google Cloud Backup Vault (DR)"
             }
         }
         provider = self.cloud_provider if self.cloud_provider in mapping else "azure"
@@ -152,8 +214,9 @@ class InfrastructureReasoningEngine:
 
     def synthesize_from_intent(self) -> Dict[str, Any]:
         """
-        Synthesizes a highly detailed, 34-node architecture.
-        Strictly enforces NSGs, Subnets, and Private Endpoints inside nested groups.
+        Synthesizes a highly detailed, enterprise-grade production-ready visual topology graph.
+        Returns 50+ nodes and 50+ edges strictly covering all network/security boundaries,
+        supporting HA layouts, diagnostic monitor sinks, and explicit Private Endpoints.
         """
         nodes = []
         edges = []
@@ -164,13 +227,13 @@ class InfrastructureReasoningEngine:
         prefix_match = re.match(r'^(\d{1,3}\.\d{1,3})\.', self.vnet_cidr)
         ip_prefix = prefix_match.group(1) if prefix_match else "10.0"
 
-        # Outer Nesting Structure Node definitions
+        # 1. Outer Nesting Structure Node definitions
         nodes.append({
             "id": "region-group",
             "type": "RegionGroupNode",
             "position": {"x": 50, "y": 50},
             "data": {"label": f"Cloud Region: {self.region}"},
-            "style": {"width": 2000, "height": 1520}
+            "style": {"width": 2900, "height": 1780}
         })
 
         nodes.append({
@@ -179,7 +242,7 @@ class InfrastructureReasoningEngine:
             "parentNode": "region-group",
             "position": {"x": 30, "y": 60},
             "data": {"label": f"Resource Scope: {self.resource_group}"},
-            "style": {"width": 1940, "height": 1430}
+            "style": {"width": 2840, "height": 1690}
         })
 
         nodes.append({
@@ -188,16 +251,16 @@ class InfrastructureReasoningEngine:
             "parentNode": "rg-group",
             "position": {"x": 30, "y": 60},
             "data": {"label": f"Virtual Network (VPC): {self.vnet_cidr}"},
-            "style": {"width": 1880, "height": 1340}
+            "style": {"width": 2780, "height": 1600}
         })
 
-        # Subnet Nodes definitions
+        # 2. Subnet Nodes definitions (Updated grid placement coordinates to avoid overlapping)
         subnets = {
-            "subnet-ingress": {"label": f"Ingress Subnet ({ip_prefix}.1.0/24)", "x": 40, "y": 60, "width": 660, "height": 340},
-            "subnet-mgmt": {"label": f"Management Subnet ({ip_prefix}.4.0/24)", "x": 740, "y": 60, "width": 660, "height": 620},
-            "subnet-pe": {"label": f"Private Endpoint Subnet ({ip_prefix}.5.0/24)", "x": 1440, "y": 60, "width": 400, "height": 450},
-            "subnet-app": {"label": f"Application Subnet ({ip_prefix}.2.0/24)", "x": 40, "y": 720, "width": 1800, "height": 340},
-            "subnet-data": {"label": f"Data Subnet ({ip_prefix}.3.0/24)", "x": 40, "y": 1100, "width": 1800, "height": 340},
+            "subnet-ingress": {"label": "Ingress Subnet", "cidr": f"{ip_prefix}.1.0/24", "x": 40, "y": 60, "width": 700, "height": 400},
+            "subnet-mgmt": {"label": "Management Subnet", "cidr": f"{ip_prefix}.4.0/24", "x": 780, "y": 60, "width": 1000, "height": 600},
+            "subnet-pe": {"label": "Private Endpoint Subnet", "cidr": f"{ip_prefix}.5.0/24", "x": 1820, "y": 60, "width": 900, "height": 600},
+            "subnet-app": {"label": "Application Subnet", "cidr": f"{ip_prefix}.2.0/24", "x": 40, "y": 720, "width": 2680, "height": 400},
+            "subnet-data": {"label": "Data Subnet", "cidr": f"{ip_prefix}.3.0/24", "x": 40, "y": 1160, "width": 2680, "height": 400},
         }
 
         for sub_id, cfg in subnets.items():
@@ -206,23 +269,32 @@ class InfrastructureReasoningEngine:
                 "type": "SubnetGroupNode",
                 "parentNode": "vnet-group",
                 "position": {"x": cfg["x"], "y": cfg["y"]},
-                "data": {"label": cfg["label"], "width": cfg["width"], "height": cfg["height"]},
+                "data": {
+                    "label": cfg["label"],
+                    "subnet": cfg["cidr"],
+                    "provider": self.cloud_provider
+                },
                 "style": {"width": cfg["width"], "height": cfg["height"]}
             })
 
-        def add_nested_node(id_val: str, n_type: str, label: str, x: int, y: int, parent_subnet: str, detail: str, cost: int):
+        # Helper to inject nested resources
+        def add_nested_node(id_val: str, n_type: str, label: str, x: int, y: int, parent_subnet: str, detail: str, cost: int, is_public: bool = False):
             nodes.append({
                 "id": id_val,
                 "type": n_type,
                 "parentNode": parent_subnet,
                 "position": {"x": x, "y": y},
                 "data": {
-                  "label": label,
-                  "typeSubText": detail,
-                  "subnet": parent_subnet,
-                  "provider": self.cloud_provider,
-                  "cost": f"~${cost}/mo",
-                  "estimated_monthly_cost": cost
+                    "label": label,
+                    "typeSubText": detail,
+                    "subnet": parent_subnet,
+                    "provider": self.cloud_provider,
+                    "cost": f"${cost}/month",
+                    "monthly_cost": f"${cost}/month",
+                    "estimated_monthly_cost": cost,
+                    "public": is_public,
+                    "private": not is_public,
+                    "resource_type": detail
                 }
             })
 
@@ -234,89 +306,207 @@ class InfrastructureReasoningEngine:
                 "animated": animated
             })
 
-        # --- 1. Ingress Subnet Resources ---
-        add_nested_node("dns", "GatewayNode", self.get_cloud_resource_name("dns"), 40, 60, "subnet-ingress", "Global DNS routing", 10)
-        add_nested_node("cdn", "GatewayNode", self.get_cloud_resource_name("cdn"), 40, 190, "subnet-ingress", "Content Delivery Network", 50)
-        add_nested_node("waf", "SecurityNode", self.get_cloud_resource_name("waf"), 360, 60, "subnet-ingress", "WAF Rules Engine", 120)
-        add_nested_node("appgw", "GatewayNode", self.get_cloud_resource_name("appgw"), 360, 190, "subnet-ingress", "Application Gateway", 100)
+        # --- 3. Subnet NSG and Route Tables (Required for every subnet) ---
+        for sub_id, cfg in subnets.items():
+            short_name = sub_id.replace("subnet-", "")
+            add_nested_node(f"nsg-{short_name}", "SecurityNode", f"{self.get_cloud_resource_name('nsg')} - {cfg['label']}", 30, 60, sub_id, "azurerm_network_security_group", 0, is_public=False)
+            add_nested_node(f"rt-{short_name}", "GatewayNode", f"{self.get_cloud_resource_name('rt')} - {cfg['label']}", 30, 180, sub_id, "azurerm_route_table", 0, is_public=False)
 
-        add_edge("dns", "cdn", False)
-        add_edge("cdn", "waf", True)
-        add_edge("waf", "appgw", True)
+        # --- 4. Edge Layer Nodes (Internet, Front Door, DDoS, WAF, App Gateway, Firewall) ---
+        # Put internet and front door at the resource group level (y: 10 sits above VNet-group y: 60)
+        nodes.append({
+            "id": "internet",
+            "type": "GatewayNode",
+            "parentNode": "rg-group",
+            "position": {"x": 40, "y": 10},
+            "data": {
+                "label": self.get_cloud_resource_name("internet"),
+                "typeSubText": "public_gateway",
+                "provider": self.cloud_provider,
+                "cost": "$0/month",
+                "monthly_cost": "$0/month",
+                "estimated_monthly_cost": 0,
+                "public": True,
+                "private": False,
+                "resource_type": "public_gateway"
+            }
+        })
+        nodes.append({
+            "id": "front-door",
+            "type": "GatewayNode",
+            "parentNode": "rg-group",
+            "position": {"x": 340, "y": 10},
+            "data": {
+                "label": self.get_cloud_resource_name("front_door"),
+                "typeSubText": "azurerm_cdn_frontdoor_profile",
+                "provider": self.cloud_provider,
+                "cost": "$35/month",
+                "monthly_cost": "$35/month",
+                "estimated_monthly_cost": 35,
+                "public": True,
+                "private": False,
+                "resource_type": "azurerm_cdn_frontdoor_profile"
+            }
+        })
+        nodes.append({
+            "id": "ddos-protection",
+            "type": "SecurityNode",
+            "parentNode": "rg-group",
+            "position": {"x": 640, "y": 10},
+            "data": {
+                "label": self.get_cloud_resource_name("ddos"),
+                "typeSubText": "azurerm_network_ddos_protection_plan",
+                "provider": self.cloud_provider,
+                "cost": "$50/month",
+                "monthly_cost": "$50/month",
+                "estimated_monthly_cost": 50,
+                "public": False,
+                "private": True,
+                "resource_type": "azurerm_network_ddos_protection_plan"
+            }
+        })
+        nodes.append({
+            "id": "waf-policy",
+            "type": "SecurityNode",
+            "parentNode": "rg-group",
+            "position": {"x": 940, "y": 10},
+            "data": {
+                "label": self.get_cloud_resource_name("waf_policy"),
+                "typeSubText": "azurerm_web_application_firewall_policy",
+                "provider": self.cloud_provider,
+                "cost": "$20/month",
+                "monthly_cost": "$20/month",
+                "estimated_monthly_cost": 20,
+                "public": True,
+                "private": False,
+                "resource_type": "azurerm_web_application_firewall_policy"
+            }
+        })
 
-        # --- 2. Application Subnet Compute Resources ---
-        compute_key = self.compute_type.lower().replace(" (paas)", "").replace(" (serverless)", "").replace(" (microservices)", "").strip()
-        compute_name = self.get_cloud_resource_name(compute_key)
-        add_nested_node("aks-cluster", "BackendNode", f"{compute_name} Engine", 40, 60, "subnet-app", "Primary Compute Cluster", 100)
-        add_nested_node("aks-system", "BackendNode", "System Node Pool", 40, 190, "subnet-app", "Core cluster system pods", 120)
-        add_nested_node("aks-user", "BackendNode", "User Node Pool", 390, 190, "subnet-app", "Compute worker nodes", 240)
+        # Add Gateway & Firewall inside Ingress Subnet
+        add_nested_node("app-gateway", "GatewayNode", self.get_cloud_resource_name("appgw"), 360, 60, "subnet-ingress", "azurerm_application_gateway", 40, is_public=True)
+        add_nested_node("azure-firewall", "GatewayNode", self.get_cloud_resource_name("azure_firewall"), 360, 180, "subnet-ingress", "azurerm_firewall", 900, is_public=True)
+
+        # Connect Edge Layer Flow
+        add_edge("internet", "front-door", True)
+        add_edge("front-door", "ddos-protection", False)
+        add_edge("ddos-protection", "waf-policy", False)
+        add_edge("waf-policy", "app-gateway", True)
+        add_edge("app-gateway", "azure-firewall", True)
+
+        # --- 5. AKS Compute Layer Expansion (System/User Node pools, Ingress, APIs) ---
+        add_nested_node("aks-cluster", "BackendNode", self.get_cloud_resource_name("aks_cluster"), 320, 60, "subnet-app", "azurerm_kubernetes_cluster", 250, is_public=False)
+        add_nested_node("aks-system-node-pool", "BackendNode", self.get_cloud_resource_name("aks_system"), 320, 180, "subnet-app", "azurerm_kubernetes_cluster_node_pool", 100, is_public=False)
+        add_nested_node("aks-user-node-pool", "BackendNode", self.get_cloud_resource_name("aks_user"), 320, 300, "subnet-app", "azurerm_kubernetes_cluster_node_pool", 150, is_public=False)
+        add_nested_node("aks-ingress-controller", "GatewayNode", self.get_cloud_resource_name("ingress_controller"), 640, 60, "subnet-app", "nginx_ingress", 30, is_public=False)
         
-        # Deploy microservices inside the App Subnet (representing AKS Deployments)
-        add_nested_node("svc-frontend", "FrontendNode", "Frontend UI Service", 740, 60, "subnet-app", "Static Next.js pod", 30)
-        add_nested_node("svc-api-gateway", "BackendNode", "API Gateway Controller", 740, 190, "subnet-app", "Spring Cloud gateway", 40)
-        add_nested_node("svc-auth", "BackendNode", "Auth Identity Service", 1090, 60, "subnet-app", "User profile authenticator", 40)
-        add_nested_node("svc-projects", "BackendNode", "Projects Core API", 1090, 190, "subnet-app", "Business layer service", 40)
-        add_nested_node("svc-architecture", "BackendNode", "Architecture Logic Service", 1440, 190, "subnet-app", "Processing logic pod", 40)
+        # Deploy microservices inside the App Subnet (representing AKS Deployments/Pods)
+        add_nested_node("svc-api-gateway", "GatewayNode", "API Gateway Controller", 640, 180, "subnet-app", "api_gateway_service", 40, is_public=False)
+        add_nested_node("svc-auth", "BackendNode", "Auth Identity Service", 960, 60, "subnet-app", "auth_microservice", 40, is_public=False)
+        add_nested_node("svc-projects", "BackendNode", "Projects Core API", 960, 180, "subnet-app", "projects_microservice", 40, is_public=False)
+        add_nested_node("svc-architecture", "BackendNode", "Architecture Logic Service", 1280, 60, "subnet-app", "architecture_microservice", 40, is_public=False)
+        add_nested_node("svc-notification", "BackendNode", "Notification Service", 1280, 180, "subnet-app", "notification_microservice", 30, is_public=False)
+        add_nested_node("svc-reporting", "BackendNode", "Reporting Service", 1600, 60, "subnet-app", "reporting_microservice", 30, is_public=False)
 
-        add_edge("appgw", "aks-cluster", True)
-        add_edge("aks-cluster", "aks-system", False)
-        add_edge("aks-cluster", "aks-user", False)
-        add_edge("aks-user", "svc-frontend", True)
-        add_edge("aks-user", "svc-api-gateway", True)
-        add_edge("svc-frontend", "svc-api-gateway", True)
+        # Connect ingress to compute
+        add_edge("azure-firewall", "aks-ingress-controller", True)
+        add_edge("aks-ingress-controller", "svc-api-gateway", True)
+        add_edge("aks-cluster", "aks-system-node-pool", False)
+        add_edge("aks-cluster", "aks-user-node-pool", False)
+
+        # Microservice communication edges
         add_edge("svc-api-gateway", "svc-auth", True)
         add_edge("svc-api-gateway", "svc-projects", True)
         add_edge("svc-api-gateway", "svc-architecture", True)
+        add_edge("svc-api-gateway", "svc-notification", True)
+        add_edge("svc-api-gateway", "svc-reporting", True)
 
-        # --- 3. Data Subnet Database Resources ---
-        db_key = self.database_type.lower().replace(" (flexible server)", "").replace(" (nosql)", "").replace(" (multi-model api)", "").strip()
-        db_name = self.get_cloud_resource_name(db_key)
-        add_nested_node("db-primary", "DatabaseNode", db_name, 40, 60, "subnet-data", "Primary DB Instance", 250)
-        add_nested_node("db-replica", "DatabaseNode", f"{db_name} Replica", 40, 190, "subnet-data", "HA Read-Replica Server", 250)
-        add_nested_node("redis", "CacheNode", self.get_cloud_resource_name("redis"), 390, 190, "subnet-data", "In-memory cache cluster", 120)
-        add_nested_node("blob", "StorageNode", self.get_cloud_resource_name("blob"), 740, 190, "subnet-data", "Blob Assets Bucket", 80)
-        add_nested_node("tf-state", "StorageNode", "Terraform State Storage", 1090, 190, "subnet-data", "State locking bucket", 5)
+        # --- 6. Data Layer Expansion (PostgreSQL, HA standby, Redis, Storage) ---
+        add_nested_node("db-primary", "DatabaseNode", self.get_cloud_resource_name("postgresql"), 320, 60, "subnet-data", "azurerm_postgresql_flexible_server", 115, is_public=False)
+        add_nested_node("db-replica", "DatabaseNode", f"{self.get_cloud_resource_name('postgresql')} Replica", 320, 180, "subnet-data", "azurerm_postgresql_flexible_server_replica", 115, is_public=False)
+        add_nested_node("db-backup-policy", "SecurityNode", self.get_cloud_resource_name("backup_policy"), 640, 60, "subnet-data", "azurerm_backup_policy_postgresql", 10, is_public=False)
+        
+        add_nested_node("redis", "CacheNode", self.get_cloud_resource_name("redis"), 960, 60, "subnet-data", "azurerm_redis_cache", 45, is_public=False)
+        add_nested_node("redis-replica", "CacheNode", f"{self.get_cloud_resource_name('redis')} Replica", 960, 180, "subnet-data", "azurerm_redis_cache_replica", 45, is_public=False)
 
-        add_edge("db-primary", "db-replica", False)
-        add_edge("svc-projects", "db-primary", False)
-        add_edge("svc-architecture", "db-primary", False)
-        add_edge("svc-auth", "redis", False)
-        add_edge("svc-projects", "redis", False)
-        add_edge("svc-projects", "blob", False)
+        add_nested_node("storage-account", "StorageNode", self.get_cloud_resource_name("blob"), 1280, 60, "subnet-data", "azurerm_storage_account", 25, is_public=False)
+        add_nested_node("storage-replica", "StorageNode", f"{self.get_cloud_resource_name('blob')} GRS Replica", 1280, 180, "subnet-data", "azurerm_storage_account_replica", 25, is_public=False)
+        add_nested_node("blob-container", "StorageNode", "Blob Containers", 1600, 60, "subnet-data", "azurerm_storage_container", 0, is_public=False)
 
-        # --- 4. Private Endpoint Subnet ---
-        add_nested_node("pe-db", "SecurityNode", "Private Link - DB Connection", 40, 60, "subnet-pe", "DB private IP binding", 10)
-        add_nested_node("pe-kv", "SecurityNode", "Private Link - Vault Storage", 40, 190, "subnet-pe", "Vault private IP binding", 10)
-        add_nested_node("pe-storage", "SecurityNode", "Private Link - Storage Account", 40, 320, "subnet-pe", "Blob private IP binding", 10)
+        # Database replicas & backup links
+        add_edge("db-primary", "db-replica", True)
+        add_edge("db-primary", "db-backup-policy", False)
+        add_edge("redis", "redis-replica", True)
+        add_edge("storage-account", "storage-replica", True)
+        add_edge("storage-account", "blob-container", False)
 
+        # --- 7. Security Layer (Key Vault, Managed Identity, Role Assignment, Firewall Policy) ---
+        add_nested_node("keyvault", "SecurityNode", self.get_cloud_resource_name("keyvault"), 360, 60, "subnet-mgmt", "azurerm_key_vault", 20, is_public=False)
+        add_nested_node("managed-identity", "SecurityNode", self.get_cloud_resource_name("managed_identity"), 360, 180, "subnet-mgmt", "azurerm_user_assigned_identity", 0, is_public=False)
+        add_nested_node("role-assignment", "SecurityNode", self.get_cloud_resource_name("role_assignment"), 360, 300, "subnet-mgmt", "azurerm_role_assignment", 0, is_public=False)
+        add_nested_node("firewall-policy", "SecurityNode", self.get_cloud_resource_name("firewall_policy"), 360, 420, "subnet-mgmt", "azurerm_firewall_policy", 30, is_public=False)
+
+        add_edge("azure-firewall", "firewall-policy", False)
+        add_edge("managed-identity", "role-assignment", False)
+        add_edge("role-assignment", "aks-cluster", False)
+
+        # --- 8. Private Endpoint Subnet Resources ---
+        add_nested_node("pe-db", "SecurityNode", "PE PostgreSQL DB", 360, 60, "subnet-pe", "azurerm_private_endpoint_db", 10, is_public=False)
+        add_nested_node("pe-redis", "SecurityNode", "PE Redis Cache", 360, 180, "subnet-pe", "azurerm_private_endpoint_redis", 10, is_public=False)
+        add_nested_node("pe-storage", "SecurityNode", "PE Blob Storage", 360, 300, "subnet-pe", "azurerm_private_endpoint_storage", 10, is_public=False)
+        add_nested_node("pe-kv", "SecurityNode", "PE Key Vault", 360, 420, "subnet-pe", "azurerm_private_endpoint_kv", 10, is_public=False)
+
+        # Backup & Recovery Vaults (High Availability target)
+        add_nested_node("backup-vault", "StorageNode", self.get_cloud_resource_name("backup_vault"), 620, 180, "subnet-pe", "azurerm_data_protection_backup_vault", 20, is_public=False)
+        add_nested_node("recovery-vault", "SecurityNode", self.get_cloud_resource_name("recovery_vault"), 620, 300, "subnet-pe", "azurerm_recovery_services_vault", 30, is_public=False)
+
+        # Private Endpoint Connection Edges
         add_edge("pe-db", "db-primary", False)
+        add_edge("pe-redis", "redis", False)
+        add_edge("pe-storage", "storage-account", False)
         add_edge("pe-kv", "keyvault", False)
-        add_edge("pe-storage", "blob", False)
-        add_edge("svc-projects", "pe-db", False)
-        add_edge("svc-auth", "pe-kv", False)
 
-        # --- 5. Management Subnet Resources ---
-        add_nested_node("keyvault", "SecurityNode", self.get_cloud_resource_name("keyvault"), 40, 60, "subnet-mgmt", "Secrets and keys vault", 20)
-        add_nested_node("iam", "SecurityNode", self.get_cloud_resource_name("iam"), 40, 190, "subnet-mgmt", "Access Roles Identity", 0)
-        add_nested_node("backup", "StorageNode", self.get_cloud_resource_name("backup"), 40, 320, "subnet-mgmt", "Recovery Vault storage", 60)
-        add_nested_node("bastion", "SecurityNode", self.get_cloud_resource_name("bastion"), 360, 60, "subnet-mgmt", "Secure shell jumpbox", 140)
-        add_nested_node("acr", "StorageNode", self.get_cloud_resource_name("acr"), 360, 190, "subnet-mgmt", "Private image registry", 50)
+        # Microservice Private Link consumption routes
+        add_edge("svc-auth", "pe-kv", True)
+        add_edge("svc-projects", "pe-db", True)
+        add_edge("svc-architecture", "pe-db", True)
+        add_edge("svc-projects", "pe-redis", True)
+        add_edge("svc-reporting", "pe-storage", True)
 
-        add_edge("iam", "aks-cluster", False)
-        add_edge("aks-cluster", "acr", False)
-        add_edge("bastion", "aks-cluster", False)
+        # Backup vault links
+        add_edge("db-primary", "backup-vault", False)
+        add_edge("storage-account", "backup-vault", False)
+        add_edge("backup-vault", "recovery-vault", False)
 
-        # --- 6. Global Monitoring components ---
-        add_nested_node("log-analytics", "MonitoringNode", self.get_cloud_resource_name("log_analytics"), 360, 320, "subnet-mgmt", "Ingestion Analytics workspace", 100)
-        add_nested_node("app-insights", "MonitoringNode", self.get_cloud_resource_name("app_insights"), 40, 450, "subnet-mgmt", "APM distributed tracer", 50)
+        # --- 9. Monitoring Layer (Azure Monitor, Log Analytics, Diagnostics, APM) ---
+        add_nested_node("log-analytics", "MonitoringNode", self.get_cloud_resource_name("log_analytics"), 690, 60, "subnet-mgmt", "azurerm_log_analytics_workspace", 100, is_public=False)
+        add_nested_node("app-insights", "MonitoringNode", self.get_cloud_resource_name("app_insights"), 690, 180, "subnet-mgmt", "azurerm_application_insights", 50, is_public=False)
+        add_nested_node("azure-monitor", "MonitoringNode", self.get_cloud_resource_name("azure_monitor"), 690, 300, "subnet-mgmt", "azurerm_monitor", 25, is_public=False)
+        add_nested_node("alerts", "MonitoringNode", self.get_cloud_resource_name("alerts"), 690, 420, "subnet-mgmt", "azurerm_monitor_metric_alert", 5, is_public=False)
+        
+        # Diagnostic settings node placed in PE Subnet for secure metrics forwarding
+        add_nested_node("diagnostic-settings", "MonitoringNode", self.get_cloud_resource_name("diagnostic_settings"), 620, 60, "subnet-pe", "azurerm_monitor_diagnostic_setting", 5, is_public=False)
 
-        add_edge("aks-cluster", "log-analytics", False)
-        add_edge("db-primary", "log-analytics", False)
-        add_edge("appgw", "log-analytics", False)
+        # Monitoring Connection Edges
+        add_edge("aks-cluster", "diagnostic-settings", False)
+        add_edge("db-primary", "diagnostic-settings", False)
+        add_edge("app-gateway", "diagnostic-settings", False)
+        add_edge("diagnostic-settings", "log-analytics", False)
+        add_edge("azure-monitor", "log-analytics", False)
+        add_edge("azure-monitor", "alerts", False)
+        
+        # APM Trace links from microservices
+        add_edge("svc-auth", "app-insights", False)
         add_edge("svc-projects", "app-insights", False)
+        add_edge("svc-architecture", "app-insights", False)
+        add_edge("svc-reporting", "app-insights", False)
 
-        # Verify Node count matches target >= 25, edge count matches >= 30.
-        # This setup returns 8 groups + 29 resources = 37 total nodes, and 33 edges. Conforms with quality gates.
+        # Subnet association edges (Visual connectivity representing NSG & Route Table binding)
+        for sub_id in subnets.keys():
+            short_name = sub_id.replace("subnet-", "")
+            add_edge(f"nsg-{short_name}", sub_id, False)
+            add_edge(f"rt-{short_name}", sub_id, False)
+
         return {
             "nodes": nodes,
             "edges": edges,
@@ -362,18 +552,25 @@ class InfrastructureReasoningEngine:
             position = node.get("position") if isinstance(node.get("position"), dict) else {}
             style = node.get("style") if isinstance(node.get("style"), dict) else {}
             
+            # Map cost and public metadata fields robustly
+            cost_val = data.get("cost") or data.get("monthly_cost") or "$0/month"
+            is_public = bool(data.get("public", False))
+            
             normalized_node = {
                 "id": node_id,
                 "type": node_type,
                 "data": {
                     "label": str(data.get("label", node_id)),
                     "status": str(data.get("status", "active")),
-                    "cost": data.get("cost"),
-                    "typeSubText": data.get("typeSubText"),
+                    "cost": cost_val,
+                    "monthly_cost": cost_val,
+                    "typeSubText": data.get("typeSubText") or data.get("resource_type", ""),
                     "subnet": str(data.get("subnet", "")),
                     "layer": str(data.get("layer", "")),
-                    "public": bool(data.get("public", False)),
-                    "provider": str(data.get("provider", self.cloud_provider))
+                    "public": is_public,
+                    "private": not is_public,
+                    "provider": str(data.get("provider", self.cloud_provider)),
+                    "resource_type": data.get("resource_type") or data.get("typeSubText") or ""
                 },
                 "position": {
                     "x": float(position.get("x", 0)),

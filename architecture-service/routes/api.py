@@ -207,13 +207,70 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     exec_ms = int((end_time - start_time) * 1000)
     
     # 4. Architecture Quality Gate
-    subnets = set(n.get("data", {}).get("subnet") for n in nodes if n.get("data", {}).get("subnet"))
-    
-    types = set(n.get("type") for n in nodes)
-    
-    if not nodes:
-        logger.error("Quality Gate Failed: Architecture contains no nodes.")
-        raise HTTPException(status_code=500, detail="Quality Gate Failed: Could not generate valid topology.")
+    node_ids = set(n.get("id") for n in nodes)
+    node_labels = set(str(n.get("data", {}).get("label", "")).lower() for n in nodes)
+    node_types = set(n.get("type") for n in nodes)
+    subnets = set(n.get("id") for n in nodes if n.get("type") == "SubnetGroupNode")
+
+    # Validate node count
+    if len(nodes) < 25:
+        logger.error(f"Quality Gate Failed: Node count {len(nodes)} is less than 25.")
+        raise HTTPException(status_code=500, detail=f"Quality Gate Failed: Node count ({len(nodes)}) is less than 25.")
+
+    # Validate edge count
+    if len(edges) < 35:
+        logger.error(f"Quality Gate Failed: Edge count {len(edges)} is less than 35.")
+        raise HTTPException(status_code=500, detail=f"Quality Gate Failed: Edge count ({len(edges)}) is less than 35.")
+
+    # Validate VNet exists
+    has_vnet = "VNetGroupNode" in node_types or any("vnet" in nid.lower() or "vpc" in nid.lower() for nid in node_ids)
+    if not has_vnet:
+        logger.error("Quality Gate Failed: VNet/VPC group node is missing.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: VNet/VPC group node is missing.")
+
+    # Validate all selected subnets exist (Ingress, App, Data, Mgmt, PE)
+    required_subnets = ["ingress", "app", "data", "mgmt", "pe"]
+    existing_subnets = [nid.lower() for nid in node_ids if "subnet" in nid.lower() or "snet" in nid.lower()]
+    for rs in required_subnets:
+        if not any(rs in es for es in existing_subnets):
+            logger.error(f"Quality Gate Failed: Subnet '{rs}' is missing.")
+            raise HTTPException(status_code=500, detail=f"Quality Gate Failed: Subnet '{rs}' is missing.")
+
+    # Validate NSGs exist (NSGs should cover subnets or be represented as nodes with 'nsg' or 'security group' or 'firewall' in label/id)
+    has_nsg = any("nsg" in nid.lower() or "security group" in nid.lower() or "firewall" in nid.lower() or "nsg" in lbl or "security group" in lbl for nid, lbl in zip(node_ids, node_labels))
+    if not has_nsg:
+        logger.error("Quality Gate Failed: NSG/Security Group resources are missing.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: NSG/Security Group resources are missing.")
+
+    # Validate Route Tables exist
+    has_rt = any("route table" in lbl or "rt-" in nid.lower() or "-rt" in nid.lower() or "route-table" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
+    if not has_rt:
+        logger.error("Quality Gate Failed: Route Table resources are missing.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: Route Table resources are missing.")
+
+    # Validate Monitoring exists
+    has_monitoring = any(t == "MonitoringNode" or "monitor" in nid.lower() or "insights" in nid.lower() or "analytics" in nid.lower() for nid, t in zip(node_ids, node_types))
+    if not has_monitoring:
+        logger.error("Quality Gate Failed: Monitoring resources are missing.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: Monitoring resources are missing.")
+
+    # Validate Backup exists
+    has_backup = any("backup" in nid.lower() or "recovery" in nid.lower() or "vault" in nid.lower() and "key" not in nid.lower() for nid in node_ids)
+    if not has_backup:
+        logger.error("Quality Gate Failed: Backup Vault/Recovery resources are missing.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: Backup Vault/Recovery resources are missing.")
+
+    # Validate Private Endpoints exist
+    has_pe = any("pe-" in nid.lower() or "private endpoint" in lbl or "private-endpoint" in lbl or "pe_" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
+    if not has_pe:
+        logger.error("Quality Gate Failed: Private Endpoint resources are missing.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: Private Endpoint resources are missing.")
+
+    # Validate Security resources exist (e.g. Key Vault)
+    has_security = any(t == "SecurityNode" or "vault" in nid.lower() or "key" in nid.lower() for nid, t in zip(node_ids, node_types))
+    if not has_security:
+        logger.error("Quality Gate Failed: Security vault/secrets resources are missing.")
+        raise HTTPException(status_code=500, detail="Quality Gate Failed: Security vault/secrets resources are missing.")
         
     generation_source = f"ai_generated+{getattr(llm_client, 'active_provider', 'ollama').lower()}"
 
