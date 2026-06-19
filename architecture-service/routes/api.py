@@ -115,11 +115,41 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
         }
     ]
 
+    container_parent_map = {
+        "region-group": None,
+        "rg-group": "region-group",
+        "vnet-group": "rg-group",
+        "subnet-ingress": "vnet-group",
+        "subnet-mgmt": "vnet-group",
+        "subnet-pe": "vnet-group",
+        "subnet-app": "vnet-group",
+        "subnet-data": "vnet-group"
+    }
+
+    nodes_map = {str(n.get("id")).lower(): n for n in nodes if n.get("id")}
     injected = list(nodes)
+
     for container in containers:
         c_id = container["id"]
-        if c_id not in node_ids:
+        c_id_lower = c_id.lower()
+        if c_id_lower not in node_ids:
             injected.insert(0, container)
+            nodes_map[c_id_lower] = container
+        else:
+            # Enforce parentNode on the existing container node to heal any detached structures
+            existing_node = nodes_map[c_id_lower]
+            existing_node["parentNode"] = container_parent_map[c_id]
+            
+            # Reset coordinates if they are outside reasonable relative boundary offsets
+            pos = existing_node.get("position", {})
+            try:
+                x_val = float(pos.get("x", 0) if pos.get("x") is not None else 0)
+                y_val = float(pos.get("y", 0) if pos.get("y") is not None else 0)
+            except (ValueError, TypeError):
+                x_val, y_val = 0.0, 0.0
+                
+            if x_val < 0 or y_val < -100 or x_val > 3000 or y_val > 2500:
+                existing_node["position"] = container["position"]
             
     return injected
 
@@ -192,6 +222,22 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
         if 'position' not in node or not isinstance(node['position'], dict):
             node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
         
+        # Snap back resource nodes to parentNode if they got detached but have a subnet ref
+        subnet_ref = node.get("data", {}).get("subnet") or ""
+        if not node.get("parentNode") and subnet_ref:
+            if subnet_ref.startswith("subnet-") or subnet_ref in ["vnet-group", "rg-group", "region-group"]:
+                node["parentNode"] = subnet_ref
+                # Reset coordinates to a sensible default relative offset within the parent if off bounds
+                pos = node.get("position", {})
+                try:
+                    x_val = float(pos.get("x", 0) if pos.get("x") is not None else 0)
+                    y_val = float(pos.get("y", 0) if pos.get("y") is not None else 0)
+                except (ValueError, TypeError):
+                    x_val, y_val = 0.0, 0.0
+                    
+                if x_val < 0 or x_val > 1500 or y_val < 0 or y_val > 1500:
+                    node["position"] = {"x": float(30 + (idx % 3) * 200), "y": float(60 + (idx // 3) * 100)}
+
         if 'style' not in node or not isinstance(node['style'], dict):
             node['style'] = {}
             
