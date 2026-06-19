@@ -1,3 +1,4 @@
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from routes.projects import router as projects_router
