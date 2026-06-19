@@ -66,6 +66,21 @@ interface ArchitectureCanvasProps {
 export function computeHierarchicalLayout(nodes: Node[], provider: string = "azure"): Node[] {
   const normProvider = (provider || "azure").toLowerCase();
 
+  // Find existing group nodes in the nodes list (before filtering) to preserve their custom labels
+  const existingRegionNode = nodes.find((n) => n.type === "RegionGroupNode");
+  const existingRgNode = nodes.find((n) => n.type === "ResourceGroupNode");
+  const existingVnetNode = nodes.find((n) => n.type === "VNetGroupNode");
+  const existingSubnetNodes = nodes.filter((n) => n.type === "SubnetGroupNode");
+
+  const regionLabel = existingRegionNode?.data?.label || `Region: ${normProvider === "azure" ? "East US" : normProvider === "aws" ? "us-east-1" : "us-central1"}`;
+  const rgLabel = existingRgNode?.data?.label || (normProvider === "azure" ? "Resource Group: rg-production" : normProvider === "aws" ? "AWS Account Scope" : "GCP Project Scope");
+  const vnetLabel = existingVnetNode?.data?.label || (normProvider === "aws" ? "VPC: 10.0.0.0/16" : "Virtual Network (VNet): 10.0.0.0/16");
+
+  const getSubnetLabel = (id: string, defaultLabel: string) => {
+    const found = existingSubnetNodes.find((n) => n.id === id);
+    return found?.data?.label || defaultLabel;
+  };
+
   // Filter out any existing group nodes to prevent duplication
   const cleanNodes = nodes.filter(
     (n) =>
@@ -108,11 +123,11 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     string,
     { label: string; x: number; y: number; width: number; height: number; colStep: number; rowStep: number }
   > = {
-    "subnet-ingress": { label: "Ingress Subnet (10.0.1.0/24)", x: 40, y: 60, width: 660, height: 340, colStep: 320, rowStep: 130 },
-    "subnet-mgmt": { label: "Management Subnet (10.0.4.0/24)", x: 740, y: 60, width: 660, height: 620, colStep: 320, rowStep: 130 },
-    "subnet-pe": { label: "Private Endpoint Subnet (10.0.5.0/24)", x: 1440, y: 60, width: 400, height: 450, colStep: 320, rowStep: 130 },
-    "subnet-app": { label: "Application Subnet (10.0.2.0/24)", x: 40, y: 720, width: 1800, height: 340, colStep: 350, rowStep: 130 },
-    "subnet-data": { label: "Data Subnet (10.0.3.0/24)", x: 40, y: 1100, width: 1800, height: 340, colStep: 350, rowStep: 130 },
+    "subnet-ingress": { label: getSubnetLabel("subnet-ingress", "Ingress Subnet (10.0.1.0/24)"), x: 40, y: 60, width: 660, height: 340, colStep: 320, rowStep: 130 },
+    "subnet-mgmt": { label: getSubnetLabel("subnet-mgmt", "Management Subnet (10.0.4.0/24)"), x: 740, y: 60, width: 660, height: 620, colStep: 320, rowStep: 130 },
+    "subnet-pe": { label: getSubnetLabel("subnet-pe", "Private Endpoint Subnet (10.0.5.0/24)"), x: 1440, y: 60, width: 400, height: 450, colStep: 320, rowStep: 130 },
+    "subnet-app": { label: getSubnetLabel("subnet-app", "Application Subnet (10.0.2.0/24)"), x: 40, y: 720, width: 1800, height: 340, colStep: 350, rowStep: 130 },
+    "subnet-data": { label: getSubnetLabel("subnet-data", "Data Subnet (10.0.3.0/24)"), x: 40, y: 1100, width: 1800, height: 340, colStep: 350, rowStep: 130 },
   };
 
   // Build the 4-level nesting hierarchy:
@@ -123,7 +138,7 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     id: "region-group",
     type: "RegionGroupNode",
     position: { x: 50, y: 50 },
-    data: { label: `Region: ${normProvider === "azure" ? "East US" : normProvider === "aws" ? "us-east-1" : "us-central1"}` },
+    data: { label: regionLabel },
     style: { width: 2000, height: 1520 },
     zIndex: 1,
   });
@@ -134,7 +149,7 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     type: "ResourceGroupNode",
     parentNode: "region-group",
     position: { x: 30, y: 60 },
-    data: { label: normProvider === "azure" ? "Resource Group: rg-production" : normProvider === "aws" ? "AWS Account Scope" : "GCP Project Scope" },
+    data: { label: rgLabel },
     style: { width: 1940, height: 1430 },
     zIndex: 2,
   });
@@ -145,7 +160,7 @@ export function computeHierarchicalLayout(nodes: Node[], provider: string = "azu
     type: "VNetGroupNode",
     parentNode: "rg-group",
     position: { x: 30, y: 60 },
-    data: { label: normProvider === "aws" ? "VPC: 10.0.0.0/16" : "Virtual Network (VNet): 10.0.0.0/16" },
+    data: { label: vnetLabel },
     style: { width: 1880, height: 1340 },
     zIndex: 3,
   });
@@ -245,10 +260,21 @@ export default function ArchitectureCanvas({
   };
 
   // ── Sync canvas when parent props change ───────────────────────────────────
+  const hasArrangedOnMount = useRef(false);
+
   useEffect(() => {
-    setNodes(initialNodes as Node[]);
-    setEdges(initialEdges as Edge[]);
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
+    if (!hasArrangedOnMount.current && initialNodes.length > 0) {
+      hasArrangedOnMount.current = true;
+      const provider = initialNodes.find(n => n.data?.provider)?.data?.provider || "azure";
+      const arranged = computeHierarchicalLayout(initialNodes as Node[], provider);
+      setNodes(arranged);
+      setEdges(initialEdges as Edge[]);
+      setTimeout(() => reactFlowInstance?.fitView({ padding: 0.15 }), 150);
+    } else {
+      setNodes(initialNodes as Node[]);
+      setEdges(initialEdges as Edge[]);
+    }
+  }, [initialNodes, initialEdges, setNodes, setEdges, reactFlowInstance]);
 
   // ── Close context menu on global click ─────────────────────────────────────
   useEffect(() => {

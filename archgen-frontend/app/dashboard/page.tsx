@@ -704,6 +704,7 @@ export default function DashboardPage() {
         {/* Center: React Flow Interactive Canvas */}
         <div className="flex-grow relative bg-[#0b0f19] flex flex-col overflow-hidden">
           <ArchitectureCanvas
+            key={architecture ? `${architecture.cloud_provider}-${architecture.execution_time_ms}` : "empty"}
             initialNodes={architecture?.nodes || []}
             initialEdges={architecture?.edges || []}
             onTopologyChange={updateLocalTopology}
