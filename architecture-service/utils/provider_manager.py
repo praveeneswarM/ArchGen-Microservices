@@ -180,10 +180,10 @@ class ProviderManager:
             ],
             response_format={'type': 'json_object'},
             temperature=0.2,
-            max_tokens=4000,
+            max_tokens=8000,
             timeout=timeout
         )
-        return json.loads(response.choices[0].message.content)
+        return SafeJsonParser.parse(response.choices[0].message.content)
 
     async def _call_ollama(self, model, system, user):
         prompt = f'System:\n{system}\n\nUser:\n{user}\n\nOutput ONLY valid JSON. Do NOT include markdown code blocks or additional text.'

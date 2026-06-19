@@ -3,6 +3,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
+from utils.safe_json_parser import SafeJsonParser
 
 load_dotenv()
 
@@ -50,12 +51,12 @@ class OpenAIClient:
                 messages=messages,
                 response_format=response_format,
                 temperature=0.2,
-                max_tokens=4000
+                max_tokens=8000
             )
 
             content = response.choices[0].message.content
             logger.info("Successfully received response from OpenAI.")
-            return json.loads(content)
+            return SafeJsonParser.parse(content)
         except Exception as e:
             logger.error(f"OpenAI API call failed: {e}")
             raise RuntimeError(f"OpenAI request failed: {e}") from e
