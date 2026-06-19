@@ -215,13 +215,23 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             cost_agent = CostOptimizationAgent(client=llm_client)
             explanation_agent = ArchitectureExplanationAgent(client=llm_client)
 
+            async def run_agent_safe(coro, default_val):
+                try:
+                    return await coro
+                except Exception as ex:
+                    logger.warning(f"Enrichment agent failed: {ex}")
+                    return default_val
+
             async def run_enrichments():
-                return await asyncio.gather(
-                    security_agent.optimize_security(eval_plan, requirements.app_description),
-                    complexity_agent.audit(eval_plan, requirements.app_description),
-                    cost_agent.optimize(eval_plan, requirements.app_description),
-                    explanation_agent.explain(eval_plan, requirements.model_dump())
-                )
+                # Run sequentially with a 1.0s gap to prevent Azure 429 concurrent request limits
+                secured = await run_agent_safe(security_agent.optimize_security(eval_plan, requirements.app_description), {})
+                await asyncio.sleep(1.0)
+                complexity = await run_agent_safe(complexity_agent.audit(eval_plan, requirements.app_description), {})
+                await asyncio.sleep(1.0)
+                cost = await run_agent_safe(cost_agent.optimize(eval_plan, requirements.app_description), {})
+                await asyncio.sleep(1.0)
+                explanation = await run_agent_safe(explanation_agent.explain(eval_plan, requirements.model_dump()), {})
+                return secured, complexity, cost, explanation
 
             # 120 seconds max enrichment time to account for rate limit retries
             secured_res, complexity_res, cost_res, explanation_res = await asyncio.wait_for(run_enrichments(), timeout=120.0)
