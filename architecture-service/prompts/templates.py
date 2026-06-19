@@ -21,7 +21,7 @@ CRITICAL INSTRUCTIONS:
      * "subnet-pe" (Private Endpoint Subnet 10.0.5.0/24)
 2. Every cloud resource node MUST reside inside one of the 5 subnets by setting its `parentNode` to that subnet's ID.
 3. Node coordinates (`position.x`, `position.y`) for resources MUST be relative coordinates inside their parent subnet container. Keep them offset from (0,0) (e.g. x: 30, y: 60).
-4. The output must represent a complete topology containing at least 25+ nodes and 30+ edges to cover load balancers, DNS, CDNs, firewalls, compute instances, node pools, microservices, databases, storage caches, vaults, private endpoints, monitoring analytics, and backup vaults.
+4. The output must represent a complete topology containing 12 to 18 nodes and 15 to 20 edges to cover key elements like load balancers, firewalls, compute instances, node pools, databases, storage caches, key vaults, and monitoring.
 5. CRITICAL TERRAFORM CONVENTIONS: The infrastructure compiler requires specific Node IDs to bind variables correctly:
    - Database nodes MUST have an id starting with "database" or "db-" (e.g., "db-postgres").
    - Cache nodes MUST have an id starting with "cache" or "redis-" (e.g., "redis-cache").
