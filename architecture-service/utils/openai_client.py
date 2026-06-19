@@ -68,7 +68,18 @@ class OpenAIClient:
         """
         logger.info("Mock engine running descriptive text intelligence scan...")
         
+        def extract_json_from_text(text: str) -> Dict[str, Any]:
+            try:
+                start = text.find('{')
+                end = text.rfind('}')
+                if start != -1 and end != -1:
+                    return json.loads(text[start:end+1])
+            except Exception:
+                pass
+            return {}
+
         lower_prompt = user_prompt.lower()
+        req_data = extract_json_from_text(user_prompt)
         
         # 1. Infer application profiles
         is_banking = "bank" in lower_prompt or "finance" in lower_prompt or "transaction" in lower_prompt
@@ -82,8 +93,24 @@ class OpenAIClient:
         elif "gcp" in lower_prompt:
             provider = "gcp"
 
+        if req_data:
+            if "cloud_provider" in req_data:
+                provider = str(req_data["cloud_provider"]).lower()
+            elif "provider" in req_data:
+                provider = str(req_data["provider"]).lower()
+                
+            app_desc = str(req_data.get("app_description") or req_data.get("appDescription") or "").lower()
+            if app_desc:
+                is_banking = "bank" in app_desc or "finance" in app_desc or "transaction" in app_desc
+                is_streaming = "stream" in app_desc or "ott" in app_desc or "video" in app_desc or "media" in app_desc
+                is_crud = "crud" in app_desc or "blog" in app_desc or "simple" in app_desc or "portfolio" in app_desc
+            
+            users = str(req_data.get("expected_users") or "").lower()
+            if users:
+                is_high_scale = "1m" in users or "100k" in users or "million" in users or "high" in users
+
         # A. Requirement Understanding Mock
-        if "requirementunderstandingagent" in system_prompt.lower() or "requirement understanding" in system_prompt.lower():
+        if any(k in system_prompt.lower() for k in ["requirementunderstandingagent", "requirement understanding", "requirementanalysisagent", "requirement analysis", "analyze requirements", "understand requirements"]):
             reqs = [
                 f"Design a highly responsive architecture on {provider.upper()}.",
                 "Intelligently map database and hosting systems."
@@ -97,7 +124,22 @@ class OpenAIClient:
             if is_crud:
                 reqs.append("Deploy a cost-efficient lightweight VM or App Service container.")
                 
+            projectName = req_data.get("projectName") or req_data.get("project_name") or "Enterprise Stack"
+            region = req_data.get("region") or "East US"
+            resourceGroup = req_data.get("resourceGroup") or req_data.get("resource_group") or "rg-production"
+            vnetCIDR = req_data.get("vnetCIDR") or req_data.get("vnet_cidr") or "10.0.0.0/16"
+            computeType = req_data.get("computeType") or req_data.get("compute_type") or req_data.get("application_type") or "AKS"
+            databaseType = req_data.get("database_type") or req_data.get("databaseType") or "PostgreSQL"
+            app_description = req_data.get("app_description") or req_data.get("appDescription") or user_prompt
+
             return {
+                "projectName": projectName,
+                "region": region,
+                "resourceGroup": resourceGroup,
+                "vnetCIDR": vnetCIDR,
+                "computeType": computeType,
+                "database_type": databaseType,
+                "app_description": app_description,
                 "expected_users": "1M monthly" if is_high_scale else "10k monthly",
                 "monthly_budget": "500" if is_high_scale else "50",
                 "cloud_provider": provider,
@@ -106,70 +148,45 @@ class OpenAIClient:
             }
             
         # B. Architecture Reasoning / Planning Mock
-        elif "architectureplanningagent" in system_prompt.lower() or "architecture planning" in system_prompt.lower() or "architecturereasoningagent" in system_prompt.lower() or "architecture reasoning" in system_prompt.lower():
-            # Dynamically assemble visual nodes based on descriptions
-            nodes = [
-                {"id": "gateway", "type": "GatewayNode", "data": {"label": "API Secure ingress", "status": "active"}, "position": {"x": 100, "y": 200}},
-                {"id": "frontend", "type": "FrontendNode", "data": {"label": "Static Client app", "status": "active"}, "position": {"x": 300, "y": 100}},
-                {"id": "backend", "type": "BackendNode", "data": {"label": "Core API Service", "status": "active"}, "position": {"x": 300, "y": 250}},
-                {"id": "database", "type": "DatabaseNode", "data": {"label": "Relational Primary DB", "status": "active"}, "position": {"x": 520, "y": 320}}
-            ]
+        elif any(k in system_prompt.lower() for k in ["architectureplanningagent", "architecture planning", "architecturereasoningagent", "architecture reasoning", "reason architecture", "visual topology graph", "you are an expert cloud architect"]):
+            from utils.reasoning_engine import InfrastructureReasoningEngine
             
-            edges = [
-                {"id": "e-gateway-fe", "source": "gateway", "target": "frontend", "animated": True},
-                {"id": "e-gateway-be", "source": "gateway", "target": "backend", "animated": True},
-                {"id": "e-be-db", "source": "backend", "target": "database", "animated": False}
-            ]
+            class DummyRequirements:
+                def __init__(self, data):
+                    self.projectName = data.get("projectName") or data.get("project_name") or "Enterprise Stack"
+                    self.region = data.get("region") or "East US"
+                    self.resourceGroup = data.get("resourceGroup") or data.get("resource_group") or "rg-production"
+                    self.vnetCIDR = data.get("vnetCIDR") or data.get("vnet_cidr") or "10.0.0.0/16"
+                    self.computeType = data.get("computeType") or data.get("compute_type") or data.get("application_type") or "AKS"
+                    self.database_type = data.get("database_type") or data.get("databaseType") or "PostgreSQL"
+                    self.app_description = data.get("app_description") or data.get("appDescription") or ""
+                    self.expected_users = data.get("expected_users") or "10k monthly"
+                    self.monthly_budget = data.get("monthly_budget") or "50"
             
-            services = [
-                {"name": "API Secure ingress", "category": "gateway", "description": "Entry load balancer traffic ingress router."},
-                {"name": "Static Client app", "category": "frontend", "description": "Static web app hosting frontend assets."},
-                {"name": "Core API Service", "category": "backend", "description": "App Compute hosting primary server APIs."},
-                {"name": "Relational Primary DB", "category": "database", "description": "Managed SQL/PostgreSQL database instances."}
-            ]
+            dummy_req = DummyRequirements(req_data)
+            engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=dummy_req)
+            raw_topo = engine.synthesize_from_intent()
+            topo = engine.normalize_topology(raw_topo)
             
-            # Streaming scale requirements -> cache & CDN automatically added!
-            if is_streaming or is_high_scale:
-                nodes.append({"id": "cache", "type": "CacheNode", "data": {"label": "Redis Fast-Cache", "status": "active"}, "position": {"x": 520, "y": 180}})
-                nodes.append({"id": "storage", "type": "StorageNode", "data": {"label": "Blob static storage", "status": "active"}, "position": {"x": 300, "y": 400}})
-                
-                edges.append({"id": "e-be-cache", "source": "backend", "target": "cache", "animated": False})
-                edges.append({"id": "e-be-storage", "source": "backend", "target": "storage", "animated": False})
-                
-                services.append({"name": "Redis Fast-Cache", "category": "cache", "description": "In-memory caching layer to speed up API responses."})
-                services.append({"name": "Blob static storage", "category": "storage", "description": "Blob object storage system for media catalogs."})
-                
             return {
-                "nodes": nodes,
-                "edges": edges,
-                "services": services,
+                "nodes": topo.get("nodes", []),
+                "edges": topo.get("edges", []),
+                "services": topo.get("services", []),
                 "cloud_provider": provider
             }
             
         # C. Security Optimization Mock
-        elif "securityoptimizationagent" in system_prompt.lower() or "security optimization" in system_prompt.lower():
-            # Parse nodes passed in the prompt or simulate
-            nodes = [
-                {"id": "gateway", "type": "GatewayNode", "data": {"label": "API WAF Ingress", "status": "active"}, "position": {"x": 100, "y": 200}},
-                {"id": "frontend", "type": "FrontendNode", "data": {"label": "Static Client app", "status": "active"}, "position": {"x": 300, "y": 100}},
-                {"id": "backend", "type": "BackendNode", "data": {"label": "Core API Service", "status": "active"}, "position": {"x": 300, "y": 250}},
-                {"id": "database", "type": "DatabaseNode", "data": {"label": "Relational Primary DB", "status": "active"}, "position": {"x": 520, "y": 320}}
-            ]
-            edges = [
-                {"id": "e-gateway-fe", "source": "gateway", "target": "frontend", "animated": True},
-                {"id": "e-gateway-be", "source": "gateway", "target": "backend", "animated": True},
-                {"id": "e-be-db", "source": "backend", "target": "database", "animated": False}
-            ]
+        elif any(k in system_prompt.lower() for k in ["securityoptimizationagent", "security optimization", "optimize security", "securityvalidationagent", "security validation", "validate security"]):
+            topo = req_data.get("current_topology") or req_data or {}
+            nodes = topo.get("nodes") or topo.get("updated_nodes") or []
+            edges = topo.get("edges") or topo.get("updated_edges") or []
             
-            # High security banking -> Injects Vault node and WAF bindings automatically!
             findings = [
                 {"severity": "Low", "description": "Redirect all public HTTP traffic to secure HTTPS channels.", "remediation": "Set force_ssl = true."}
             ]
             score = 80
             
             if is_banking:
-                nodes.append({"id": "vault", "type": "SecurityNode", "data": {"label": "Hardware key vault", "status": "active"}, "position": {"x": 100, "y": 380}})
-                edges.append({"id": "e-be-vault", "source": "backend", "target": "vault", "animated": True})
                 findings.append({"severity": "High", "description": "Highly secure financial nodes require strict vault access controls.", "remediation": "Inject keys into container app environments."})
                 score = 98
                 
@@ -185,7 +202,7 @@ class OpenAIClient:
             }
             
         # D. Complexity Auditor Mock
-        elif "complexityauditoragent" in system_prompt.lower() or "complexity auditor" in system_prompt.lower():
+        elif any(k in system_prompt.lower() for k in ["complexityauditoragent", "complexity auditor", "audit complexity"]):
             is_overengineered = False
             warnings = []
             
@@ -207,7 +224,7 @@ class OpenAIClient:
             }
             
         # E. Cost Optimization Mock
-        elif "costoptimizationagent" in system_prompt.lower() or "cost optimization" in system_prompt.lower():
+        elif any(k in system_prompt.lower() for k in ["costoptimizationagent", "cost optimization", "optimize cost"]):
             cost = 45.00
             breakdown = [
                 {"service": "Core VM instances", "cost": 25.00, "reason": "Standard compute instances"},
@@ -235,7 +252,7 @@ class OpenAIClient:
             }
 
         # F. Architecture Explanation Mock
-        elif "architectureexplanationagent" in system_prompt.lower() or "architecture explanation" in system_prompt.lower():
+        elif any(k in system_prompt.lower() for k in ["architectureexplanationagent", "architecture explanation", "explain architecture", "reason architecture", "senior cloud architect"]):
             expl = "A lightweight cost-efficient monolith hosting client SPA and relational database instances."
             alt = "Considered microservices, but rejected to avoid operations overhead."
             just = "Optimizes active developer velocity for simple MVP workloads."

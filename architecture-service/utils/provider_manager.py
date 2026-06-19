@@ -170,6 +170,8 @@ class ProviderManager:
         if 'Mock' not in self.fallback_chain:
             self.fallback_chain.append('Mock')
         
+        self.active_provider = 'Mock'
+        self.active_model = 'mock'
         self._log_telemetry(start_time, 'Mock', self.fallback_chain)
         return OpenAIClient._generate_mock_response(system_prompt, user_prompt)
 
