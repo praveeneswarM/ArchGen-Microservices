@@ -241,6 +241,31 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             c_nodes = ensure_container_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
             c_nodes = post_process_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
             
+            # Heal missing edges in the cached entry if edge count is low
+            c_edges = cached.get('edges', [])
+            if len(c_edges) < 35:
+                reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
+                raw_topology = reasoning_engine.synthesize_from_intent()
+                topology = reasoning_engine.normalize_topology(raw_topology)
+                det_edges = topology.get('edges', [])
+                
+                c_node_ids = {str(n.get("id")).lower() for n in c_nodes if n.get("id")}
+                existing_edge_keys = {
+                    (str(e.get("source")).lower(), str(e.get("target")).lower())
+                    for e in c_edges if e.get("source") and e.get("target")
+                }
+                
+                merged_edges = list(c_edges)
+                for det_edge in det_edges:
+                    src = str(det_edge.get("source", "")).lower()
+                    tgt = str(det_edge.get("target", "")).lower()
+                    if src in c_node_ids and tgt in c_node_ids:
+                        if (src, tgt) not in existing_edge_keys and (tgt, src) not in existing_edge_keys:
+                            merged_edges.append(det_edge)
+                            existing_edge_keys.add((src, tgt))
+                c_edges = merged_edges
+                cached['edges'] = c_edges
+            
             cached['nodes'] = c_nodes
             cached['node_count'] = len(c_nodes)
             cached['subnet_count'] = len([n for n in c_nodes if n.get('type') == 'SubnetGroupNode'])
@@ -288,9 +313,28 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             ai_services = ai_topology.get('services', [])
             
             if ai_nodes:
+                # Keep AI nodes and services
                 nodes = ai_nodes
-                edges = ai_edges
                 services = ai_services
+                
+                # Merge edges: start with the AI-returned edges and backfill deterministic edges
+                # that connect existing nodes but were omitted by the LLM
+                ai_node_ids = {str(n.get("id")).lower() for n in ai_nodes if n.get("id")}
+                merged_edges = list(ai_edges)
+                existing_edge_keys = {
+                    (str(e.get("source")).lower(), str(e.get("target")).lower())
+                    for e in merged_edges if e.get("source") and e.get("target")
+                }
+                
+                for det_edge in topology.get('edges', []):
+                    src = str(det_edge.get("source", "")).lower()
+                    tgt = str(det_edge.get("target", "")).lower()
+                    if src in ai_node_ids and tgt in ai_node_ids:
+                        if (src, tgt) not in existing_edge_keys and (tgt, src) not in existing_edge_keys:
+                            merged_edges.append(det_edge)
+                            existing_edge_keys.add((src, tgt))
+                
+                edges = merged_edges
                 ai_enhanced = True
                 logger.info("AI Enhancement successfully generated topology via AI agents")
         except Exception as e:
