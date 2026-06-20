@@ -1067,30 +1067,162 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             ai_services = ai_topology.get('services', [])
             
             if ai_nodes:
-                # Keep AI nodes and services
-                nodes = ai_nodes
-                services = ai_services
+                # Start with deterministic topology baseline
+                nodes = list(topology.get('nodes', []))
+                services = list(topology.get('services', []))
+                edges = list(topology.get('edges', []))
                 
-                # Merge edges: start with the AI-returned edges and backfill deterministic edges
-                # that connect existing nodes but were omitted by the LLM
-                ai_node_ids = {str(n.get("id")).lower() for n in ai_nodes if n.get("id")}
-                merged_edges = list(ai_edges)
+                det_node_ids = {str(n.get("id")).lower().strip() for n in nodes if n.get("id")}
+                
+                # Identify resources in deterministic baseline
+                has_det_db = any(
+                    n.get("type") == "DatabaseNode" or 
+                    any(x in str(n.get("id")).lower() for x in ["db-", "database", "postgres", "mysql", "sql", "cosmos"])
+                    for n in nodes
+                )
+                has_det_cache = any(
+                    n.get("type") == "CacheNode" or 
+                    any(x in str(n.get("id")).lower() for x in ["redis", "cache"])
+                    for n in nodes
+                )
+                has_det_kv = any("vault" in str(n.get("id")).lower() or "keyvault" in str(n.get("id")).lower() for n in nodes if not any(x in str(n.get("id")).lower() for x in ["backup", "recovery", "pe-"]))
+                has_det_law = any("log-analytics" in str(n.get("id")).lower() or "loganalytics" in str(n.get("id")).lower() for n in nodes)
+                has_det_insights = any("app-insights" in str(n.get("id")).lower() or "insights" in str(n.get("id")).lower() for n in nodes)
+                has_det_monitor = any("monitor" in str(n.get("id")).lower() for n in nodes if not any(x in str(n.get("id")).lower() for x in ["log-analytics", "log analytics", "app-insights", "app insights", "insights", "alerts", "diagnostic"]))
+                has_det_backup = any("backup-vault" in str(n.get("id")).lower() for n in nodes)
+                has_det_recovery = any("recovery-vault" in str(n.get("id")).lower() for n in nodes)
+                has_det_storage = any("storage-account" in str(n.get("id")).lower() or "blob" in str(n.get("id")).lower() for n in nodes if not any(x in str(n.get("id")).lower() for x in ["replica", "pe-", "backup", "container"]))
+                has_det_acr = any("acr" in str(n.get("id")).lower() or "container-registry" in str(n.get("id")).lower() for n in nodes)
+
+                # Get locked compute platform and forbidden resources
+                compute_type = getattr(requirements, "computeType", None) or getattr(requirements, "application_type", None) or "AKS"
+                compute_upper = str(compute_type).upper().replace("_", " ").replace("-", " ")
+                AKS_FORBIDDEN = {"app-service-plan", "web-app", "container-app-env"}
+                APPSERVICE_FORBIDDEN = {"aks-cluster", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", "container-app-env"}
+                CONTAINERAPPS_FORBIDDEN = {"aks-cluster", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", "app-service-plan", "web-app"}
+                
+                if "AKS" in compute_upper or "KUBERNETES" in compute_upper:
+                    forbidden_compute = AKS_FORBIDDEN
+                elif "APP SERVICE" in compute_upper or "WEB APP" in compute_upper:
+                    forbidden_compute = APPSERVICE_FORBIDDEN
+                else:
+                    forbidden_compute = CONTAINERAPPS_FORBIDDEN
+
+                CONTAINER_IDS = {
+                    "region-group", "rg-group", "vnet-group", 
+                    "subnet-ingress", "subnet-mgmt", "subnet-pe", "subnet-app", "subnet-data", 
+                    "shared-services-group", "aks-cluster-group"
+                }
+
+                def has_det_resource(keywords):
+                    return any(any(kw in str(n.get("id")).lower() or kw in str(n.get("data", {}).get("label", "")).lower() for kw in keywords) for n in nodes)
+
+                # Filter and merge AI nodes
+                for ai_node in ai_nodes:
+                    ai_id = str(ai_node.get("id", "")).lower().strip()
+                    ai_label = str(ai_node.get("data", {}).get("label", "")).lower().strip()
+                    ai_type = str(ai_node.get("type", ""))
+                    
+                    if not ai_id:
+                        continue
+                    
+                    # 1. Skip structural containers
+                    if ai_id in CONTAINER_IDS:
+                        continue
+                    
+                    # 2. Skip forbidden compute resources
+                    if ai_id in forbidden_compute:
+                        continue
+                    
+                    # 3. Enrich existing deterministic nodes
+                    if ai_id in det_node_ids:
+                        for det_node in nodes:
+                            if str(det_node.get("id", "")).lower().strip() == ai_id:
+                                ai_data = ai_node.get("data", {})
+                                det_data = det_node.setdefault("data", {})
+                                for k, v in ai_data.items():
+                                    if k not in det_data and k not in ["cost", "estimated_monthly_cost", "public", "private", "provider", "subnet", "resource_type"]:
+                                        det_data[k] = v
+                                break
+                        continue
+                    
+                    # 4. Skip duplicates of singleton resources
+                    if (ai_type == "DatabaseNode" or any(x in ai_id for x in ["db-", "database", "postgres", "mysql", "sql", "cosmos"])) and has_det_db:
+                        continue
+                    if (ai_type == "CacheNode" or any(x in ai_id for x in ["redis", "cache"])) and has_det_cache:
+                        continue
+                    if ("vault" in ai_id or "keyvault" in ai_id) and not any(x in ai_id for x in ["backup", "recovery", "pe-"]) and has_det_kv:
+                        continue
+                    if "log-analytics" in ai_id and has_det_law:
+                        continue
+                    if "app-insights" in ai_id and has_det_insights:
+                        continue
+                    if "monitor" in ai_id and not any(x in ai_id for x in ["log-analytics", "log analytics", "app-insights", "app insights", "insights", "alerts", "diagnostic"]) and has_det_monitor:
+                        continue
+                    if "backup-vault" in ai_id and has_det_backup:
+                        continue
+                    if "recovery-vault" in ai_id and has_det_recovery:
+                        continue
+                    if ("storage-account" in ai_id or "blob" in ai_id) and not any(x in ai_id for x in ["replica", "pe-", "backup", "container"]) and has_det_storage:
+                        continue
+                    if "acr" in ai_id and has_det_acr:
+                        continue
+                    
+                    # Skip duplicate PEs
+                    is_ai_pe = "pe-" in ai_id or "private endpoint" in ai_label or "private-endpoint" in ai_label
+                    if is_ai_pe:
+                        has_similar_pe = False
+                        for det_node in nodes:
+                            det_id = str(det_node.get("id", "")).lower()
+                            if "pe-" in det_id:
+                                if any(kw in ai_id and kw in det_id for kw in ["db", "postgres", "redis", "kv", "vault", "storage", "blob"]):
+                                    has_similar_pe = True
+                                    break
+                        if has_similar_pe:
+                            continue
+                            
+                    # Skip duplicate public/ingress gateways
+                    if any(x in ai_id or x in ai_label for x in ["frontdoor", "front-door"]) and has_det_resource(["frontdoor", "front-door"]):
+                        continue
+                    if any(x in ai_id or x in ai_label for x in ["ddos"]) and has_det_resource(["ddos"]):
+                        continue
+                    if any(x in ai_id or x in ai_label for x in ["waf"]) and has_det_resource(["waf"]):
+                        continue
+                    if any(x in ai_id or x in ai_label for x in ["app-gateway", "appgw", "application gateway"]) and has_det_resource(["app-gateway", "appgw", "application gateway"]):
+                        continue
+                    if any(x in ai_id or x in ai_label for x in ["firewall"]) and has_det_resource(["firewall"]):
+                        continue
+                    if any(x in ai_id or x in ai_label for x in ["bastion"]) and has_det_resource(["bastion"]):
+                        continue
+                    
+                    # Add node
+                    nodes.append(ai_node)
+                
+                # Merge services
+                det_service_names = {str(s.get("name")).lower().strip() for s in services if s.get("name")}
+                for ai_svc in ai_services:
+                    svc_name = ai_svc.get("name")
+                    if svc_name and str(svc_name).lower().strip() not in det_service_names:
+                        services.append(ai_svc)
+                        det_service_names.add(str(svc_name).lower().strip())
+                
+                # Merge edges
+                final_node_ids = {str(n.get("id")).lower().strip() for n in nodes if n.get("id")}
                 existing_edge_keys = {
-                    (str(e.get("source")).lower(), str(e.get("target")).lower())
-                    for e in merged_edges if e.get("source") and e.get("target")
+                    (str(e.get("source")).lower().strip(), str(e.get("target")).lower().strip())
+                    for e in edges if e.get("source") and e.get("target")
                 }
                 
-                for det_edge in topology.get('edges', []):
-                    src = str(det_edge.get("source", "")).lower()
-                    tgt = str(det_edge.get("target", "")).lower()
-                    if src in ai_node_ids and tgt in ai_node_ids:
+                for ai_edge in ai_edges:
+                    src = str(ai_edge.get("source", "")).lower().strip()
+                    tgt = str(ai_edge.get("target", "")).lower().strip()
+                    if src and tgt and src in final_node_ids and tgt in final_node_ids:
                         if (src, tgt) not in existing_edge_keys and (tgt, src) not in existing_edge_keys:
-                            merged_edges.append(det_edge)
+                            edges.append(ai_edge)
                             existing_edge_keys.add((src, tgt))
                 
-                edges = merged_edges
                 ai_enhanced = True
-                logger.info("AI Enhancement successfully generated topology via AI agents")
+                logger.info("AI Enhancement successfully merged topology via AI agents")
         except Exception as e:
             logger.warning(f"AI Enhancement failed to plan: {e}. Keeping deterministic baseline.")
 
