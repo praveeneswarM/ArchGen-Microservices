@@ -159,13 +159,138 @@ def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requireme
             existing_node["parentNode"] = container_parent_map[c_id]
             existing_node["position"] = container["position"]
             existing_node["style"] = container["style"]
-            
+
+    # Inject missing compute node if not present
+    compute_type_lower = str(compute_type).lower()
+    if "app service" in compute_type_lower or "web app" in compute_type_lower:
+        target_compute_id = "app-service-plan"
+        target_node = {
+            "id": "app-service-plan",
+            "type": "BackendNode",
+            "parentNode": "subnet-app",
+            "position": {"x": 100.0, "y": 60.0},
+            "style": {"width": 100.0, "height": 50.0},
+            "data": {
+                "label": "App Service Plan",
+                "typeSubText": "azurerm_service_plan",
+                "subnet": "subnet-app",
+                "provider": provider,
+                "cost": "$75/month",
+                "monthly_cost": "$75/month",
+                "estimated_monthly_cost": 75.0,
+                "public": False,
+                "private": True,
+                "resource_type": "azurerm_service_plan",
+                "terraform_resource": "azurerm_service_plan"
+            }
+        }
+    elif "container app" in compute_type_lower:
+        target_compute_id = "container-app-env"
+        target_node = {
+            "id": "container-app-env",
+            "type": "BackendNode",
+            "parentNode": "subnet-app",
+            "position": {"x": 100.0, "y": 60.0},
+            "style": {"width": 100.0, "height": 50.0},
+            "data": {
+                "label": "Container Apps Environment",
+                "typeSubText": "azurerm_container_app_environment",
+                "subnet": "subnet-app",
+                "provider": provider,
+                "cost": "$50/month",
+                "monthly_cost": "$50/month",
+                "estimated_monthly_cost": 50.0,
+                "public": False,
+                "private": True,
+                "resource_type": "azurerm_container_app_environment",
+                "terraform_resource": "azurerm_container_app_environment"
+            }
+        }
+    else:
+        target_compute_id = "aks-cluster"
+        target_node = {
+            "id": "aks-cluster",
+            "type": "BackendNode",
+            "parentNode": "aks-cluster-group",
+            "position": {"x": 10.0, "y": 20.0},
+            "style": {"width": 100.0, "height": 50.0},
+            "data": {
+                "label": "AKS Cluster",
+                "typeSubText": "azurerm_kubernetes_cluster",
+                "subnet": "aks-cluster-group",
+                "provider": provider,
+                "cost": "$250/month",
+                "monthly_cost": "$250/month",
+                "estimated_monthly_cost": 250.0,
+                "public": False,
+                "private": True,
+                "resource_type": "azurerm_kubernetes_cluster",
+                "terraform_resource": "azurerm_kubernetes_cluster"
+            }
+        }
+
+    if target_compute_id.lower() not in {str(n.get("id")).lower() for n in injected if n.get("id")}:
+        injected.append(target_node)
+        
     return injected
 
 
-def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements: Any) -> List[Dict[str, Any]]:
+def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements: Any, edges: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     # Post-process live/enhanced/deterministic topology to enforce user's custom inputs
     try:
+        # Align microservice node IDs to start with 'svc-'
+        if edges is not None:
+            PROTECTED_COMPUTE_IDS = {
+                "aks-cluster", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", 
+                "app-service-plan", "container-app-env", "container-app-env-group"
+            }
+            id_mapping = {}
+            for n in nodes:
+                n_id = str(n.get("id", ""))
+                n_id_lower = n_id.lower()
+                matched_prefix = None
+                for prefix in ["container-app-", "app-service-", "web-app-", "aks-"]:
+                    if n_id_lower.startswith(prefix):
+                        matched_prefix = prefix
+                        break
+                if matched_prefix and n_id_lower not in PROTECTED_COMPUTE_IDS:
+                    new_id = "svc-" + n_id[len(matched_prefix):]
+                    id_mapping[n_id] = new_id
+                    n["id"] = new_id
+                    if "data" in n and isinstance(n["data"], dict):
+                        n["data"]["resource_id"] = new_id
+            if id_mapping:
+                for e in edges:
+                    src = e.get("source")
+                    tgt = e.get("target")
+                    if src in id_mapping:
+                        e["source"] = id_mapping[src]
+                    if tgt in id_mapping:
+                        e["target"] = id_mapping[tgt]
+                    new_src = id_mapping.get(src, src)
+                    new_tgt = id_mapping.get(tgt, tgt)
+                    e["id"] = f"e-{new_src}-{new_tgt}"
+
+        compute_type = "AKS"
+        if requirements:
+            compute_type = getattr(requirements, "computeType", None) or getattr(requirements, "application_type", None) or "AKS"
+        compute_upper = str(compute_type).upper().replace("_", " ").replace("-", " ")
+
+        # Filter out forbidden nodes based on locked compute platform
+        AKS_FORBIDDEN = {"app-service-plan", "web-app", "container-app-env", "container-app-env-group"}
+        APPSERVICE_FORBIDDEN = {"aks-cluster", "aks-cluster-group", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", "container-app-env"}
+        CONTAINERAPPS_FORBIDDEN = {"aks-cluster", "aks-cluster-group", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", "app-service-plan", "web-app"}
+
+        forbidden_nodes = set()
+        if "AKS" in compute_upper or "KUBERNETES" in compute_upper:
+            forbidden_nodes = AKS_FORBIDDEN
+        elif "APP SERVICE" in compute_upper or "WEB APP" in compute_upper:
+            forbidden_nodes = APPSERVICE_FORBIDDEN
+        else:
+            forbidden_nodes = CONTAINERAPPS_FORBIDDEN
+
+        nodes = [n for n in nodes if str(n.get("id", "")).lower() not in forbidden_nodes]
+
         vnet_cidr_val = requirements.vnetCIDR or "10.0.0.0/16"
         ip_prefix = "10.0"
         match_cidr = re.match(r"^(\d+\.\d+)", vnet_cidr_val)
@@ -175,6 +300,46 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
         reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
         compute_name = reasoning_engine.get_cloud_resource_name(requirements.computeType or "AKS")
         db_name = reasoning_engine.get_cloud_resource_name(requirements.database_type or "PostgreSQL")
+
+        # Determine specific terraform resource names based on selected database and compute
+        prov_lower = provider.lower()
+        db_type_lower = (requirements.database_type or "").lower()
+        if prov_lower == "azure":
+            db_tf_resource = "azurerm_postgresql_flexible_server"
+            if "cosmos" in db_type_lower:
+                db_tf_resource = "azurerm_cosmosdb_account"
+            elif "mysql" in db_type_lower:
+                db_tf_resource = "azurerm_mysql_flexible_server"
+            elif "mongo" in db_type_lower:
+                db_tf_resource = "mongodbatlas_cluster"
+        elif prov_lower == "aws":
+            db_tf_resource = "aws_db_instance"
+            if "cosmos" in db_type_lower:
+                db_tf_resource = "aws_dynamodb_table"
+        else: # GCP
+            db_tf_resource = "google_sql_database_instance"
+            if "cosmos" in db_type_lower:
+                db_tf_resource = "google_firestore_db"
+
+        compute_type_lower = (requirements.computeType or "").lower()
+        if prov_lower == "azure":
+            compute_tf_resource = "azurerm_kubernetes_cluster"
+            if "app service" in compute_type_lower or "web app" in compute_type_lower:
+                compute_tf_resource = "azurerm_linux_web_app"
+            elif "container app" in compute_type_lower:
+                compute_tf_resource = "azurerm_container_app"
+        elif prov_lower == "aws":
+            compute_tf_resource = "aws_eks_cluster"
+            if "app service" in compute_type_lower or "web app" in compute_type_lower:
+                compute_tf_resource = "aws_elastic_beanstalk_environment"
+            elif "container app" in compute_type_lower:
+                compute_tf_resource = "aws_ecs_service"
+        else: # GCP
+            compute_tf_resource = "google_container_cluster"
+            if "app service" in compute_type_lower or "web app" in compute_type_lower:
+                compute_tf_resource = "google_app_engine_standard_app_version"
+            elif "container app" in compute_type_lower:
+                compute_tf_resource = "google_cloud_run_service"
 
         for node in nodes:
             n_id = str(node.get("id", "")).lower()
@@ -244,19 +409,28 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
                     node["data"]["label"] = f"Data Subnet ({ip_prefix}.3.0/24)"
                     
             # E. Update Compute engine Node Label
-            elif n_id in ["aks-cluster", "compute", "cluster"] or (n_type == "BackendNode" and "cluster" in n_id and not any(x in n_id for x in ["pool", "ingress", "controller", "system", "user", "svc-"])):
+            elif n_id in ["aks-cluster", "container-app-env", "app-service-plan", "compute", "cluster"] or (n_type == "BackendNode" and ("cluster" in n_id or "container-app-env" in n_id or "app-service-plan" in n_id) and not any(x in n_id for x in ["pool", "ingress", "controller", "system", "user", "svc-"])):
                 node["data"] = node.get("data") or {}
                 node["data"]["label"] = f"{compute_name} Engine"
+                node["data"]["terraform_resource"] = compute_tf_resource
+                node["data"]["typeSubText"] = compute_tf_resource
+                node["data"]["resource_type"] = "compute"
                 
             # F. Update Primary/Replica DB Node Labels
             elif n_id == "db-primary" or n_id == "database" or (n_type == "DatabaseNode" and "replica" not in n_id):
                 node["data"] = node.get("data") or {}
                 node["data"]["label"] = db_name
+                node["data"]["terraform_resource"] = db_tf_resource
+                node["data"]["typeSubText"] = db_tf_resource
+                node["data"]["resource_type"] = "database"
                 
             # G. Update DB Replica Node Label
             elif n_id == "db-replica" or (n_type == "DatabaseNode" and "replica" in n_id):
                 node["data"] = node.get("data") or {}
                 node["data"]["label"] = f"{db_name} Replica"
+                node["data"]["terraform_resource"] = db_tf_resource
+                node["data"]["typeSubText"] = db_tf_resource
+                node["data"]["resource_type"] = "database"
     except Exception as pe:
         logger.warning(f"Failed to post-process node labels: {pe}")
         
@@ -567,11 +741,11 @@ def deduplicate_shared_resources(nodes: List[Dict[str, Any]], edges: List[Dict[s
 
 
 def _count_real_subnets(nodes: List[Dict[str, Any]]) -> int:
-    """Count only the 5 real subnet nodes (ingress, app, data, mgmt, pe), excluding container groups like shared-services-group and aks-cluster-group."""
-    CONTAINER_GROUP_IDS = {"shared-services-group", "aks-cluster-group"}
+    """Count only the 5 real subnet nodes (ingress, app, data, mgmt, pe)."""
+    REAL_SUBNET_IDS = {"subnet-ingress", "subnet-mgmt", "subnet-app", "subnet-data", "subnet-pe"}
     return len([
         n for n in nodes
-        if n.get("type") == "SubnetGroupNode" and str(n.get("id", "")).lower() not in CONTAINER_GROUP_IDS
+        if str(n.get("id", "")).lower() in REAL_SUBNET_IDS
     ])
 
 
@@ -982,11 +1156,11 @@ def heal_topology_gates(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
     nodes = ensure_container_nodes(nodes, provider, requirements)
     node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
     
-    # 2. Ensure Route Tables and NSGs exist for every subnet (discovered dynamically, excluding shared services and aks cluster groups)
-    CONTAINER_GROUP_IDS = {"shared-services-group", "aks-cluster-group"}
+    # 2. Ensure Route Tables and NSGs exist for every subnet (discovered dynamically, restricted to the 5 real subnets)
+    REAL_SUBNET_IDS = {"subnet-ingress", "subnet-mgmt", "subnet-app", "subnet-data", "subnet-pe"}
     subnet_nodes = [
         n for n in nodes
-        if n.get("type") == "SubnetGroupNode" and str(n.get("id", "")).lower() not in CONTAINER_GROUP_IDS
+        if str(n.get("id", "")).lower() in REAL_SUBNET_IDS
     ]
     
     for sub_node in subnet_nodes:
@@ -1316,9 +1490,30 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         if len(c_nodes) > 0:
             # Heal legacy/incomplete cached entry to ensure required containers exist
             c_nodes = ensure_container_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
-            c_nodes = post_process_nodes(c_nodes, cached.get('cloud_provider', provider), requirements)
             
+            # Perform ID alignment for compute engine node
+            compute_type = getattr(requirements, "computeType", None) or getattr(requirements, "application_type", None) or "AKS"
+            compute_type_lower = str(compute_type).lower()
+            compute_target_id = "aks-cluster"
+            if "app service" in compute_type_lower or "web app" in compute_type_lower:
+                compute_target_id = "app-service-plan"
+            elif "container app" in compute_type_lower:
+                compute_target_id = "container-app-env"
+
+            if compute_target_id != "aks-cluster":
+                for n in c_nodes:
+                    if str(n.get("id")).lower() == "aks-cluster":
+                        n["id"] = compute_target_id
+                c_edges = cached.get('edges', [])
+                for e in c_edges:
+                    if str(e.get("source")).lower() == "aks-cluster":
+                        e["source"] = compute_target_id
+                    if str(e.get("target")).lower() == "aks-cluster":
+                        e["target"] = compute_target_id
+                cached['edges'] = c_edges
+
             c_edges = cached.get('edges', [])
+            c_nodes = post_process_nodes(c_nodes, cached.get('cloud_provider', provider), requirements, c_edges)
             c_nodes, c_edges = deduplicate_shared_resources(c_nodes, c_edges)
             
             # Heal missing edges in the cached entry if edge count is low
@@ -1480,8 +1675,28 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                     
                 # Ensure all required container nodes exist (if missing, add them, otherwise align them)
                 nodes = ensure_container_nodes(nodes, provider, requirements)
+                
+                # Perform ID alignment for compute engine node
+                compute_type = getattr(requirements, "computeType", None) or getattr(requirements, "application_type", None) or "AKS"
+                compute_type_lower = str(compute_type).lower()
+                compute_target_id = "aks-cluster"
+                if "app service" in compute_type_lower or "web app" in compute_type_lower:
+                    compute_target_id = "app-service-plan"
+                elif "container app" in compute_type_lower:
+                    compute_target_id = "container-app-env"
+
+                if compute_target_id != "aks-cluster":
+                    for n in nodes:
+                        if str(n.get("id")).lower() == "aks-cluster":
+                            n["id"] = compute_target_id
+                    for e in edges:
+                        if str(e.get("source")).lower() == "aks-cluster":
+                            e["source"] = compute_target_id
+                        if str(e.get("target")).lower() == "aks-cluster":
+                            e["target"] = compute_target_id
+
                 # Snap resources to parent container groups and set relative positions
-                nodes = post_process_nodes(nodes, provider, requirements)
+                nodes = post_process_nodes(nodes, provider, requirements, edges)
                 
                 post_processed_nodes_count = len(nodes)
                 post_processed_edges_count = len(edges)
@@ -1543,15 +1758,12 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                 else:
                     logger.warning(f"Validation failed on Attempt {attempt}. Findings: {validation_findings}")
                     
-            # If validation failed after 3 attempts, run the topology healing engine (only in fallback mode)
+            # If validation failed after 3 attempts, run the topology healing engine to guarantee valid compileable topology
             if validation_findings:
-                if generation_mode == 'AI_WITH_FALLBACK':
-                    logger.info("Running topology healing engine to resolve validation findings")
-                    nodes, edges = heal_topology_gates(nodes, edges, provider, requirements)
-                    # Re-run post process to snap any newly injected nodes
-                    nodes = post_process_nodes(nodes, provider, requirements)
-                else:
-                    logger.info("Preserving pure AI topology with validation findings (no healing in AI_ONLY mode)")
+                logger.info("Running topology healing engine to resolve validation findings")
+                nodes, edges = heal_topology_gates(nodes, edges, provider, requirements)
+                # Re-run post process to snap any newly injected nodes and align IDs
+                nodes = post_process_nodes(nodes, provider, requirements, edges)
             
             ai_enhanced = True
             
@@ -1584,7 +1796,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         
         # Ensure container nodes and coordinates snap cleanly
         nodes = ensure_container_nodes(nodes, provider, requirements)
-        nodes = post_process_nodes(nodes, provider, requirements)
+        nodes = post_process_nodes(nodes, provider, requirements, edges)
         
         # Minimally set position, data, and style for all nodes to prevent frontend crash
         for idx, node in enumerate(nodes):

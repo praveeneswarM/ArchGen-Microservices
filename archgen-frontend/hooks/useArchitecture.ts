@@ -36,38 +36,45 @@ export function useArchitecture() {
       let cost = data.cost || "~$25/mo";
       let typeSubText = data.typeSubText || "azurerm_resource";
 
+      const isGeneric = !typeSubText || 
+        typeSubText === "azurerm_resource" || 
+        typeSubText === "resource" || 
+        typeSubText === "" ||
+        ["gateway", "frontend", "backend", "database", "cache", "storage", "security", "monitoring",
+         "gatewaynode", "frontendnode", "backendnode", "databasenode", "cachenode", "storagenode", "securitynode", "monitoringnode"].includes(typeSubText.toLowerCase());
+
       switch (node.type) {
         case "GatewayNode":
           cost = pricingTier === "Premium" ? "~$120/mo" : pricingTier === "Standard" ? "~$60/mo" : "~$25/mo";
-          typeSubText = "azurerm_application_gateway";
+          if (isGeneric) typeSubText = "azurerm_application_gateway";
           break;
         case "FrontendNode":
           cost = "~$30/mo";
-          typeSubText = "azurerm_static_web_app";
+          if (isGeneric) typeSubText = "azurerm_static_web_app";
           break;
         case "BackendNode":
           cost = pricingTier === "Premium" ? "~$150/mo" : pricingTier === "Standard" ? "~$75/mo" : "~$30/mo";
-          typeSubText = "azurerm_container_app";
+          if (isGeneric) typeSubText = "azurerm_container_app";
           break;
         case "DatabaseNode":
           cost = pricingTier === "Premium" ? "~$240/mo" : pricingTier === "Standard" ? "~$115/mo" : "~$45/mo";
-          typeSubText = "azurerm_postgresql_flexible_server";
+          if (isGeneric) typeSubText = "azurerm_postgresql_flexible_server";
           break;
         case "CacheNode":
           cost = pricingTier === "Premium" ? "~$90/mo" : pricingTier === "Standard" ? "~$45/mo" : "~$15/mo";
-          typeSubText = "azurerm_redis_cache";
+          if (isGeneric) typeSubText = "azurerm_redis_cache";
           break;
         case "StorageNode":
           cost = "~$25/mo";
-          typeSubText = "azurerm_storage_account";
+          if (isGeneric) typeSubText = "azurerm_storage_account";
           break;
         case "SecurityNode":
           cost = "~$15/mo";
-          typeSubText = "azurerm_key_vault";
+          if (isGeneric) typeSubText = "azurerm_key_vault";
           break;
         case "MonitoringNode":
           cost = "~$20/mo";
-          typeSubText = "azurerm_log_analytics_workspace";
+          if (isGeneric) typeSubText = "azurerm_log_analytics_workspace";
           break;
       }
 

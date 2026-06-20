@@ -90,7 +90,7 @@ class TerraformEngine:
         
         # 6. Check DB resource exists
         has_db_in_arch = any(n.get("type") == "DatabaseNode" for n in nodes)
-        has_db_in_tf = any("postgresql" in t or "rds" in t or "cloudsql" in t for t in tf_resource_types)
+        has_db_in_tf = any("postgresql" in t or "rds" in t or "cloudsql" in t or "cosmos" in t or "mysql" in t or "mongo" in t for t in tf_resource_types)
         if has_db_in_arch and not has_db_in_tf:
             warnings.append("Terraform Drift: Database nodes exist in architecture but no database resource found in HCL.")
         

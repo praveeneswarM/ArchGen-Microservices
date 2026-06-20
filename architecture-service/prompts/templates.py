@@ -16,6 +16,7 @@ Analyze the requirements and determine:
 6. The exact Terraform resource type for each resource (e.g. azurerm_kubernetes_cluster for AKS, azurerm_postgresql_flexible_server for Postgres).
 
 Strictly follow these rules:
+- You MUST strictly use the user's selected Compute platform (e.g. AKS, App Service, Container Apps) and Database type specified in the analyzed requirements. Do NOT substitute them or default to something else (e.g., if database is CosmosDB, you MUST plan for CosmosDB/DynamoDB/Firestore and NOT PostgreSQL/MySQL).
 - Do NOT use hardcoded microservice templates. Tailor the microservices list exactly to the application description.
 - Do NOT use hardcoded AKS layouts.
 - Do NOT use hardcoded subnet definitions. Decide subnets dynamically based on the networking requirements.
@@ -88,6 +89,7 @@ VALIDATION ENGINE RULES YOU MUST COMPLY WITH:
 9. You MUST generate a Secrets/Key Vault node (type 'SecurityNode', id containing 'vault' or 'keyvault') exactly once.
 10. You MUST generate Private Endpoints (ids starting with 'pe-', e.g., 'pe-db') and place them in the 'subnet-pe' subnet (parentNode: 'subnet-pe'). The Private Endpoint Subnet must not be empty.
 11. Databases (e.g., 'db-primary', 'db-replica'), Redis cache (e.g., 'redis'), and storage accounts (e.g., 'storage-account') must live in 'subnet-data' (parentNode: 'subnet-data') unless they are Private Endpoints.
+12. You MUST strictly use the Compute platform and Database type specified in the architecture plan and analyzed requirements. Do NOT default to AKS or PostgreSQL unless they are explicitly selected. E.g., if database is CosmosDB, generate CosmosDB resources (e.g. 'db-primary' of type 'DatabaseNode' with label matching the CosmosDB service, and PE 'pe-db' pointing to it) and NOT PostgreSQL resources. If compute is Container Apps, generate 'container-app-env' and do NOT generate any AKS nodes.
 
 Every node's "data" object MUST contain exactly these metadata fields:
 {
