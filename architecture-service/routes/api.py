@@ -619,6 +619,20 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
         if 'cost_estimate' not in node['data']:
             node['data']['cost_estimate'] = node['data'].get('cost', '') or ''
             
+    # Sanitize parentNode references to prevent frontend crash
+    existing_node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
+    for node in nodes:
+        parent = node.get("parentNode")
+        if parent:
+            parent_lower = str(parent).lower()
+            if parent_lower not in existing_node_ids:
+                if parent_lower == "aks-cluster-group":
+                    node["parentNode"] = "subnet-app"
+                    node["data"]["subnet"] = "subnet-app"
+                else:
+                    node["parentNode"] = None
+                    node["data"]["subnet"] = ""
+            
     return nodes
 
 
