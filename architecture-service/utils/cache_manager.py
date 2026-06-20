@@ -27,6 +27,7 @@ class CacheManager:
 
     def set(self, requirements: Any, response: Dict[str, Any]):
         if not self.enabled: return
+        os.makedirs(self.cache_dir, exist_ok=True)
         h = self._hash(requirements.model_dump())
         fpath = os.path.join(self.cache_dir, f'{h}.json')
         with open(fpath, 'w') as f:
