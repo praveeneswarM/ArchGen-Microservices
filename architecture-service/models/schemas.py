@@ -83,6 +83,7 @@ class ArchitectureResponse(BaseModel):
     node_count: Optional[int] = 0
     edge_count: Optional[int] = 0
     subnet_count: Optional[int] = 0
+    response_summary: Optional[Dict[str, Any]] = None
 
 class NodeModel(BaseModel):
     id: str
