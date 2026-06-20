@@ -73,7 +73,7 @@ You MUST represent all container groups and nested relationships:
 
 VALIDATION ENGINE RULES YOU MUST COMPLY WITH:
 1. Total Node Count MUST be at least 25 nodes.
-2. Total Edge Count MUST be at least 35 edges.
+2. Total Edge Count MUST be at least 35 edges. You MUST connect all microservices, databases, gateways, firewalls, routing tables, network security groups, and monitoring tools to ensure a complete, highly interconnected graph. Create edges for traffic routing (e.g. gateway -> firewall -> subnets -> microservices -> private endpoints -> databases/cache), security associations (e.g. NSGs connected to their subnets), monitoring metrics (e.g. resources to App Insights / Diagnostic Settings), and management paths (e.g. Route Tables connected to subnets).
 3. You MUST generate at least 5 microservice nodes with IDs starting with 'svc-' (e.g., 'svc-auth', 'svc-cart', 'svc-catalog', 'svc-order', 'svc-payment') placed inside 'subnet-app' (parentNode: 'subnet-app').
 4. You MUST generate exactly 5 subnets with horizontal layout:
    - 'subnet-ingress' (Ingress Subnet)
@@ -81,12 +81,12 @@ VALIDATION ENGINE RULES YOU MUST COMPLY WITH:
    - 'subnet-app' (Application Subnet)
    - 'subnet-data' (Data Subnet)
    - 'subnet-pe' (Private Endpoint Subnet)
-5. For EVERY subnet, you MUST generate exactly one Route Table node (id containing 'rt-') and one Network Security Group node (id containing 'nsg-') placed inside that subnet (e.g., 'rt-ingress' and 'nsg-ingress' inside 'subnet-ingress'). You must have exactly 5 NSG nodes and 5 Route Table nodes in total.
+5. For EVERY subnet of the 5 subnets, you MUST generate exactly one Route Table node (id containing 'rt-', e.g., 'rt-ingress') and exactly one Network Security Group node (id containing 'nsg-', e.g., 'nsg-ingress') placed inside that subnet (parentNode: subnet ID). You must have exactly 5 NSG nodes and 5 Route Table nodes in total.
 6. A VNet/VPC group node ('vnet-group' of type 'VNetGroupNode') must exist.
 7. You MUST generate at least one MonitoringNode (e.g., log-analytics, app-insights, or azure-monitor). Do not duplicate these monitoring singletons.
 8. You MUST generate a backup/recovery vault resource (e.g., 'backup-vault' or 'recovery-vault') exactly once.
 9. You MUST generate a Secrets/Key Vault node (type 'SecurityNode', id containing 'vault' or 'keyvault') exactly once.
-10. You MUST generate Private Endpoints (ids starting with 'pe-') and place them in the 'subnet-pe' subnet (parentNode: 'subnet-pe'). The Private Endpoint Subnet must not be empty.
+10. You MUST generate Private Endpoints (ids starting with 'pe-', e.g., 'pe-db') and place them in the 'subnet-pe' subnet (parentNode: 'subnet-pe'). The Private Endpoint Subnet must not be empty.
 11. Databases (e.g., 'db-primary', 'db-replica'), Redis cache (e.g., 'redis'), and storage accounts (e.g., 'storage-account') must live in 'subnet-data' (parentNode: 'subnet-data') unless they are Private Endpoints.
 
 Every node's "data" object MUST contain exactly these metadata fields:
