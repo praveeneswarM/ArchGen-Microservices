@@ -112,7 +112,7 @@ export async function generateArchitecture(
   log("Generating architecture", input);
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 150000); // 150 seconds timeout
+  const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 seconds timeout
   
   try {
     const response = await fetch(`${API_BASE_URL}/api/generate-architecture`, {
@@ -136,7 +136,7 @@ export async function generateArchitecture(
     return data;
   } catch (err: any) {
     if (err.name === "AbortError") {
-      throw new Error("Architecture generation timed out after 90 seconds. Please try again.");
+      throw new Error("Architecture generation timed out after 300 seconds. Please try again.");
     }
     throw err;
   }
