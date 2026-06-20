@@ -435,6 +435,12 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
             node['data']['public'] = False
         if 'private' not in node['data']:
             node['data']['private'] = True
+        if 'resource_id' not in node['data']:
+            node['data']['resource_id'] = node.get('id', '')
+        if 'terraform_resource' not in node['data']:
+            node['data']['terraform_resource'] = ''
+        if 'cost_estimate' not in node['data']:
+            node['data']['cost_estimate'] = node['data'].get('cost', '') or ''
             
     return nodes
 
@@ -758,7 +764,7 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
         is_storage_resource = (
             n_type in ["DatabaseNode", "CacheNode", "StorageNode"] or
             any(db_kw in n_id_lower or db_kw in lbl_lower for db_kw in ["db-", "database", "postgresql", "mysql", "redis", "storage-account", "blob"])
-        ) and not is_pe and parent != "vnet-group"
+        ) and not is_pe and parent != "vnet-group" and "backup" not in n_id_lower and "recovery" not in n_id_lower
         if is_storage_resource:
             if parent != "subnet-data":
                 consistency_warnings.append(f"Consistency Gate: Storage resource '{n_id}' must live in 'subnet-data'.")
@@ -973,42 +979,56 @@ def heal_topology_gates(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
     nodes = ensure_container_nodes(nodes, provider, requirements)
     node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
     
-    # Real subnets we need
-    subnets = ["ingress", "mgmt", "app", "data", "pe"]
+    # 2. Ensure Route Tables and NSGs exist for every subnet (discovered dynamically, excluding shared services and aks cluster groups)
+    CONTAINER_GROUP_IDS = {"shared-services-group", "aks-cluster-group"}
+    subnet_nodes = [
+        n for n in nodes
+        if n.get("type") == "SubnetGroupNode" and str(n.get("id", "")).lower() not in CONTAINER_GROUP_IDS
+    ]
     
-    # 2. Ensure Route Tables and NSGs exist for every subnet
-    for sub in subnets:
-        sub_node_id = f"subnet-{sub}"
+    for sub_node in subnet_nodes:
+        sub_node_id = sub_node.get("id")
+        sub_node_id_lower = str(sub_node_id).lower()
         
+        # Determine clean prefix/suffix for nsg and rt naming
+        if sub_node_id_lower.startswith("subnet-"):
+            sub_name = sub_node_id[7:]
+        elif sub_node_id_lower.startswith("subnet_"):
+            sub_name = sub_node_id[7:]
+        else:
+            sub_name = sub_node_id
+            
         # Check NSG in this subnet
         has_nsg = any(
-            (parent == sub_node_id and ("nsg" in nid or "nsg" in node_labels.get(nid, "")))
-            for nid, parent in [(str(n.get("id")).lower(), n.get("parentNode")) for n in nodes]
+            (parent == sub_node_id_lower and ("nsg" in nid or "nsg" in node_labels.get(nid, "")))
+            for nid, parent in [(str(n.get("id")).lower(), str(n.get("parentNode", "")).lower()) for n in nodes]
         )
         if not has_nsg:
-            nsg_id = f"nsg-{sub}"
-            nodes.append({
-                "id": nsg_id,
-                "type": "SecurityNode",
-                "parentNode": sub_node_id,
-                "position": {"x": 30.0, "y": 60.0},
-                "data": {"label": f"Security Group ({sub.upper()})", "subnet": sub_node_id, "provider": provider}
-            })
+            nsg_id = f"nsg-{sub_name}"
+            if nsg_id.lower() not in node_ids:
+                nodes.append({
+                    "id": nsg_id,
+                    "type": "SecurityNode",
+                    "parentNode": sub_node_id,
+                    "position": {"x": 30.0, "y": 60.0},
+                    "data": {"label": f"Security Group ({sub_name.upper()})", "subnet": sub_node_id, "provider": provider}
+                })
             
         # Check RT in this subnet
         has_rt = any(
-            (parent == sub_node_id and ("rt-" in nid or "-rt" in nid or "route table" in node_labels.get(nid, "") or "route-table" in node_labels.get(nid, "")))
-            for nid, parent in [(str(n.get("id")).lower(), n.get("parentNode")) for n in nodes]
+            (parent == sub_node_id_lower and ("rt-" in nid or "-rt" in nid or "route table" in node_labels.get(nid, "") or "route-table" in node_labels.get(nid, "")))
+            for nid, parent in [(str(n.get("id")).lower(), str(n.get("parentNode", "")).lower()) for n in nodes]
         )
         if not has_rt:
-            rt_id = f"rt-{sub}"
-            nodes.append({
-                "id": rt_id,
-                "type": "SecurityNode",
-                "parentNode": sub_node_id,
-                "position": {"x": 200.0, "y": 60.0},
-                "data": {"label": f"Route Table ({sub.upper()})", "subnet": sub_node_id, "provider": provider}
-            })
+            rt_id = f"rt-{sub_name}"
+            if rt_id.lower() not in node_ids:
+                nodes.append({
+                    "id": rt_id,
+                    "type": "SecurityNode",
+                    "parentNode": sub_node_id,
+                    "position": {"x": 200.0, "y": 60.0},
+                    "data": {"label": f"Route Table ({sub_name.upper()})", "subnet": sub_node_id, "provider": provider}
+                })
             
     # Update node collections after NSG/RT injections
     node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
@@ -1192,37 +1212,43 @@ def heal_topology_gates(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
                     })
                     existing_edge_keys.add((svc, cache))
                     
-        # Associate NSGs with subnets
-        nsg_nodes = [str(n.get("id")).lower() for n in nodes if "nsg-" in str(n.get("id")).lower()]
+        # Associate NSGs with subnets based on parentNode
+        nsg_nodes = [n for n in nodes if "nsg" in str(n.get("id")).lower() or "nsg" in str(n.get("data", {}).get("label", "")).lower()]
         for nsg in nsg_nodes:
-            sub = nsg.replace("nsg-", "subnet-")
-            if sub in node_ids:
-                if len(edges) >= 35:
-                    break
-                if (nsg, sub) not in existing_edge_keys and (sub, nsg) not in existing_edge_keys:
-                    edges.append({
-                        "id": f"e-{nsg}-{sub}",
-                        "source": nsg,
-                        "target": sub,
-                        "animated": False
-                    })
-                    existing_edge_keys.add((nsg, sub))
-                    
-        # Associate Route Tables with subnets
-        rt_nodes = [str(n.get("id")).lower() for n in nodes if "rt-" in str(n.get("id")).lower()]
+            nsg_id = str(nsg.get("id")).lower()
+            parent = nsg.get("parentNode")
+            if parent:
+                parent_id = str(parent).lower()
+                if parent_id in node_ids:
+                    if len(edges) >= 35:
+                        break
+                    if (nsg_id, parent_id) not in existing_edge_keys and (parent_id, nsg_id) not in existing_edge_keys:
+                        edges.append({
+                            "id": f"e-{nsg_id}-{parent_id}",
+                            "source": nsg_id,
+                            "target": parent_id,
+                            "animated": False
+                        })
+                        existing_edge_keys.add((nsg_id, parent_id))
+                        
+        # Associate Route Tables with subnets based on parentNode
+        rt_nodes = [n for n in nodes if "rt-" in str(n.get("id")).lower() or "-rt" in str(n.get("id")).lower() or "route table" in str(n.get("data", {}).get("label", "")).lower() or "route-table" in str(n.get("data", {}).get("label", "")).lower()]
         for rt in rt_nodes:
-            sub = rt.replace("rt-", "subnet-")
-            if sub in node_ids:
-                if len(edges) >= 35:
-                    break
-                if (rt, sub) not in existing_edge_keys and (sub, rt) not in existing_edge_keys:
-                    edges.append({
-                        "id": f"e-{rt}-{sub}",
-                        "source": rt,
-                        "target": sub,
-                        "animated": False
-                    })
-                    existing_edge_keys.add((rt, sub))
+            rt_id = str(rt.get("id")).lower()
+            parent = rt.get("parentNode")
+            if parent:
+                parent_id = str(parent).lower()
+                if parent_id in node_ids:
+                    if len(edges) >= 35:
+                        break
+                    if (rt_id, parent_id) not in existing_edge_keys and (parent_id, rt_id) not in existing_edge_keys:
+                        edges.append({
+                            "id": f"e-{rt_id}-{parent_id}",
+                            "source": rt_id,
+                            "target": parent_id,
+                            "animated": False
+                        })
+                        existing_edge_keys.add((rt_id, parent_id))
                     
         # Connect microservices to Key Vault
         kv_nodes = [str(n.get("id")).lower() for n in nodes if "keyvault" in str(n.get("id")).lower() or "vault" in str(n.get("id")).lower()]
