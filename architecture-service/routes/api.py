@@ -484,19 +484,22 @@ def rebuild_services_registry(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any
 def deduplicate_shared_resources(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> tuple:
     # Categories and matchers for global env-wide shared resources
     categories = {
-        "front-door": lambda nid, lbl: ("frontdoor" in nid or "front-door" in nid or "front door" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
+        "front-door": lambda nid, lbl: ("frontdoor" in nid or "front-door" in nid or "front door" in lbl or "cdn_frontdoor" in nid or "front_door" in nid) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
         "ddos-protection": lambda nid, lbl: ("ddos" in nid or "ddos" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
         "waf-policy": lambda nid, lbl: ("waf" in nid or "waf" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
-        "app-gateway": lambda nid, lbl: ("app-gateway" in nid or "app gateway" in lbl or "appgw" in nid) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
+        "app-gateway": lambda nid, lbl: ("app-gateway" in nid or "app gateway" in lbl or "appgw" in nid or "application_gateway" in nid or "application_gateway" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
         "azure-firewall": lambda nid, lbl: ("firewall" in nid or "firewall" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint", "policy"]),
-        "keyvault": lambda nid, lbl: ("vault" in nid or "keyvault" in nid or "vault" in lbl or "key vault" in lbl) and not any(x in nid or x in lbl for x in ["backup", "recovery", "pe-kv", "pe-", "private-endpoint", "private endpoint"]),
-        "azure-monitor": lambda nid, lbl: ("monitor" in nid or "monitor" in lbl) and not any(x in nid or x in lbl for x in ["log-analytics", "log analytics", "app-insights", "app insights", "insights", "alerts", "diagnostic", "pe-", "private-endpoint", "private endpoint"]),
-        "log-analytics": lambda nid, lbl: ("log-analytics" in nid or "log analytics" in lbl or "loganalytics" in nid) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
-        "app-insights": lambda nid, lbl: ("app-insights" in nid or "app insights" in lbl or "insights" in nid or "insights" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
-        "backup-vault": lambda nid, lbl: ("backup-vault" in nid or "backup vault" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
-        "recovery-vault": lambda nid, lbl: ("recovery-vault" in nid or "recovery services vault" in lbl or "recovery-services-vault" in nid) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
-        "storage-account": lambda nid, lbl: ("storage-account" in nid or "storage account" in lbl or "blob" in nid or "blob" in lbl) and not any(x in nid or x in lbl for x in ["replica", "pe-", "private-endpoint", "private endpoint", "backup", "container"]),
-        "acr": lambda nid, lbl: ("acr" in nid or "container-registry" in nid or "container registry" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"])
+        "keyvault": lambda nid, lbl: ("vault" in nid or "keyvault" in nid or "vault" in lbl or "key vault" in lbl or "key_vault" in nid or "key_vault" in lbl) and not any(x in nid or x in lbl for x in ["backup", "recovery", "pe-kv", "pe-", "private-endpoint", "private endpoint"]),
+        "azure-monitor": lambda nid, lbl: ("monitor" in nid or "monitor" in lbl) and not any(x in nid or x in lbl for x in ["log-analytics", "log analytics", "log_analytics", "app-insights", "app insights", "app_insights", "insights", "alerts", "diagnostic", "pe-", "private-endpoint", "private endpoint"]),
+        "log-analytics": lambda nid, lbl: ("log-analytics" in nid or "log analytics" in lbl or "loganalytics" in nid or "log_analytics" in nid or "log_analytics" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
+        "app-insights": lambda nid, lbl: ("app-insights" in nid or "app insights" in lbl or "insights" in nid or "insights" in lbl or "application_insights" in nid or "application_insights" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
+        "backup-vault": lambda nid, lbl: ("backup-vault" in nid or "backup vault" in lbl or "backup_vault" in nid or "data_protection" in nid) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
+        "recovery-vault": lambda nid, lbl: ("recovery-vault" in nid or "recovery services vault" in lbl or "recovery-services-vault" in nid or "recovery_services_vault" in nid) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
+        "storage-account": lambda nid, lbl: ("storage-account" in nid or "storage account" in lbl or "blob" in nid or "blob" in lbl or "storage_account" in nid or "storage_account" in lbl) and not any(x in nid or x in lbl for x in ["replica", "pe-", "private-endpoint", "private endpoint", "backup", "container"]),
+        "acr": lambda nid, lbl: ("acr" in nid or "container-registry" in nid or "container registry" in lbl or "container_registry" in nid or "container_registry" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint"]),
+        "redis-cache": lambda nid, lbl: ("redis" in nid or "redis" in lbl) and not any(x in nid or x in lbl for x in ["replica", "pe-", "private-endpoint", "private endpoint"]),
+        "postgresql": lambda nid, lbl: ("postgresql" in nid or "postgres" in nid or "postgresql" in lbl or "postgres" in lbl) and not any(x in nid or x in lbl for x in ["replica", "pe-", "private-endpoint", "private endpoint"]),
+        "container-app": lambda nid, lbl: ("container-app" in nid or "container app" in lbl or "containerapp" in nid or "container_app" in nid or "container_app" in lbl) and not any(x in nid or x in lbl for x in ["pe-", "private-endpoint", "private endpoint", "registry"])
     }
     
     retained_nodes = {}  # category -> node_id
