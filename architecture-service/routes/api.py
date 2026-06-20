@@ -6,6 +6,9 @@ import uuid
 from typing import Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
+import os
+
 
 # Shared schemas
 from models.schemas import (
@@ -1371,22 +1374,10 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     provider = requirements.cloud_provider.lower()
     active_provider = getattr(llm_client, 'active_provider', 'None')
     
-    from agents.requirement_analysis import RequirementAnalysisAgent
-    from agents.architecture_planning import ArchitecturePlanningAgent
-    from agents.topology_generation import TopologyGenerationAgent
+    generation_mode = os.getenv('ARCHGEN_GENERATION_MODE', 'AI_ONLY')
+    ai_enhanced = False
     
-    req_agent = RequirementAnalysisAgent(client=llm_client)
-    plan_agent = ArchitecturePlanningAgent(client=llm_client)
-    topology_agent = TopologyGenerationAgent(client=llm_client)
-    
-    logger.info("Starting Pure AI Requirement Analysis")
-    analysis = await req_agent.analyze(requirements)
-    logger.info(f"Pipeline Stage: Requirement Analysis Completed. Result: {analysis}")
-    
-    logger.info("Starting Pure AI Architecture Planning")
-    plan = await plan_agent.plan(analysis)
-    logger.info(f"Pipeline Stage: Architecture Planning Completed. Plan: {plan}")
-    
+    # Initialize variables that must be in outer scope
     nodes = []
     edges = []
     services = []
@@ -1399,61 +1390,203 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     deduplicated_nodes_count = 0
     deduplicated_edges_count = 0
     
-    max_attempts = 3
-    for attempt in range(1, max_attempts + 1):
-        logger.info(f"Topology Generation Attempt {attempt}/{max_attempts}")
-        try:
-            topology_result = await topology_agent.generate(
-                analyzed_requirements=analysis,
-                plan=plan,
-                validation_findings=validation_findings if validation_findings else None
+    # Check if provider exists
+    if active_provider is None or active_provider.lower() in ['none', 'mock']:
+        if generation_mode == 'AI_ONLY':
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "No available LLM providers",
+                    "recommendation": "Configure OpenAI, DeepSeek, Azure OpenAI, or Ollama."
+                }
             )
+        else:
+            logger.info("No active LLM provider. Bypassing AI pipeline and using Deterministic Engine.")
+    else:
+        try:
+            from agents.requirement_analysis import RequirementAnalysisAgent
+            from agents.architecture_planning import ArchitecturePlanningAgent
+            from agents.topology_generation import TopologyGenerationAgent
             
-            logger.info(f"Pipeline Stage: Raw AI Response Received on attempt {attempt}")
-            print(f"ai_topology: {json.dumps(topology_result, indent=2) if isinstance(topology_result, dict) else str(topology_result)}")
+            req_agent = RequirementAnalysisAgent(client=llm_client)
+            plan_agent = ArchitecturePlanningAgent(client=llm_client)
+            topology_agent = TopologyGenerationAgent(client=llm_client)
             
-            nodes = topology_result.get('nodes', [])
-            edges = topology_result.get('edges', [])
-            services = topology_result.get('services', [])
+            logger.info("Starting Pure AI Requirement Analysis")
+            analysis = await req_agent.analyze(requirements)
+            logger.info(f"Pipeline Stage: Requirement Analysis Completed. Result: {analysis}")
+            
+            logger.info("Starting Pure AI Architecture Planning")
+            plan = await plan_agent.plan(analysis)
+            logger.info(f"Pipeline Stage: Architecture Planning Completed. Plan: {plan}")
+            
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                logger.info(f"Topology Generation Attempt {attempt}/{max_attempts}")
+                try:
+                    topology_result = await topology_agent.generate(
+                        analyzed_requirements=analysis,
+                        plan=plan,
+                        validation_findings=validation_findings if validation_findings else None
+                    )
+                    
+                    logger.info(f"Pipeline Stage: Raw AI Response Received on attempt {attempt}")
+                    print(f"ai_topology: {json.dumps(topology_result, indent=2) if isinstance(topology_result, dict) else str(topology_result)}")
+                    
+                    nodes = topology_result.get('nodes', [])
+                    edges = topology_result.get('edges', [])
+                    services = topology_result.get('services', [])
+                except Exception as e:
+                    logger.error(f"Topology Generation Agent failed on attempt {attempt}: {e}")
+                    if attempt == max_attempts:
+                        raw_resp = getattr(e, 'raw_response', None)
+                        if generation_mode == 'AI_ONLY':
+                            return JSONResponse(
+                                status_code=400,
+                                content={
+                                    "success": False,
+                                    "error": "Topology generation failed",
+                                    "details": str(e),
+                                    "raw_ai_response": raw_resp
+                                }
+                            )
+                        else:
+                            raise e
+                    continue
+                    
+                if not isinstance(nodes, list):
+                    nodes = []
+                if not isinstance(edges, list):
+                    edges = []
+                if not isinstance(services, list):
+                    services = []
+                    
+                raw_ai_nodes_count = len(nodes)
+                raw_ai_edges_count = len(edges)
+                logger.info(f"Pipeline Stage - Raw AI counts: nodes={raw_ai_nodes_count}, edges={raw_ai_edges_count}, services={len(services)}")
+                
+                # Log unregistered node types
+                ALLOWED_TYPES = {
+                    "GatewayNode", "FrontendNode", "BackendNode", "DatabaseNode", "CacheNode", 
+                    "StorageNode", "SecurityNode", "MonitoringNode", "RegionGroupNode", 
+                    "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"
+                }
+                for raw_node in nodes:
+                    raw_type = raw_node.get("type")
+                    if raw_type not in ALLOWED_TYPES:
+                        logger.warning(f"Unknown node type: {raw_type} for node ID: {raw_node.get('id')}")
+                        print(f"Unknown node type: {raw_type}")
+                    
+                # Ensure all required container nodes exist (if missing, add them, otherwise align them)
+                nodes = ensure_container_nodes(nodes, provider, requirements)
+                # Snap resources to parent container groups and set relative positions
+                nodes = post_process_nodes(nodes, provider, requirements)
+                
+                post_processed_nodes_count = len(nodes)
+                post_processed_edges_count = len(edges)
+                logger.info(f"Pipeline Stage - Post Processed counts: nodes={post_processed_nodes_count}, edges={post_processed_edges_count}")
+                
+                # Post-process nodes minimally to set positions/types to prevent frontend crash
+                for idx, node in enumerate(nodes):
+                    node_data = node.get('data') or {}
+                    node['data'] = node_data
+                    
+                    if 'position' not in node or not isinstance(node['position'], dict):
+                        node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+                    else:
+                        node['position']['x'] = float(node['position'].get('x', 0.0))
+                        node['position']['y'] = float(node['position'].get('y', 0.0))
+                        
+                    if 'style' not in node or not isinstance(node['style'], dict):
+                        node['style'] = {}
+                        
+                    # Populate required metadata fields
+                    node_data['resource_id'] = node_data.get('resource_id') or node.get('id', '')
+                    node_data['resource_type'] = node_data.get('resource_type') or str(node.get('type', 'resource')).lower()
+                    node_data['terraform_resource'] = node_data.get('terraform_resource') or ''
+                    node_data['provider'] = node_data.get('provider') or provider
+                    node_data['subnet'] = node_data.get('subnet') or node.get('parentNode', '') or ''
+                    node_data['cost_estimate'] = node_data.get('cost_estimate') or node_data.get('cost', '') or ''
+                    
+                    # Sanitization of other properties expected by frontend
+                    if 'estimated_monthly_cost' not in node_data:
+                        try:
+                            cost_val = float(re.sub(r'[^\d.]', '', str(node_data.get('cost_estimate', '25'))))
+                            node_data['estimated_monthly_cost'] = cost_val
+                        except Exception:
+                            node_data['estimated_monthly_cost'] = 25.0
+                    if 'public' not in node_data:
+                        node_data['public'] = False
+                    if 'private' not in node_data:
+                        node_data['private'] = True
+                        
+                # Deduplicate shared resources to clean up any duplicates generated by the LLM
+                nodes, edges = deduplicate_shared_resources(nodes, edges)
+                
+                deduplicated_nodes_count = len(nodes)
+                deduplicated_edges_count = len(edges)
+                logger.info(f"Pipeline Stage - Deduplicated counts: nodes={deduplicated_nodes_count}, edges={deduplicated_edges_count}")
+                
+                # Run validation engine as source of truth
+                validation_findings = validate_and_gate_architecture(
+                    nodes,
+                    edges,
+                    compute_type=requirements.computeType,
+                    database_type=requirements.database_type
+                )
+                logger.info(f"Pipeline Stage - Validation findings on attempt {attempt}: {validation_findings}")
+                
+                if not validation_findings:
+                    logger.info(f"Topology successfully validated on Attempt {attempt}")
+                    break
+                else:
+                    logger.warning(f"Validation failed on Attempt {attempt}. Findings: {validation_findings}")
+                    
+            # If validation failed after 3 attempts, run the topology healing engine (only in fallback mode)
+            if validation_findings:
+                if generation_mode == 'AI_WITH_FALLBACK':
+                    logger.info("Running topology healing engine to resolve validation findings")
+                    nodes, edges = heal_topology_gates(nodes, edges, provider, requirements)
+                    # Re-run post process to snap any newly injected nodes
+                    nodes = post_process_nodes(nodes, provider, requirements)
+                else:
+                    logger.info("Preserving pure AI topology with validation findings (no healing in AI_ONLY mode)")
+            
+            ai_enhanced = True
+            
         except Exception as e:
-            logger.error(f"Topology Generation Agent failed on attempt {attempt}: {e}")
-            if attempt == max_attempts:
-                raise e
-            continue
-            
-        if not isinstance(nodes, list):
-            nodes = []
-        if not isinstance(edges, list):
-            edges = []
-        if not isinstance(services, list):
-            services = []
-            
-        raw_ai_nodes_count = len(nodes)
-        raw_ai_edges_count = len(edges)
-        logger.info(f"Pipeline Stage - Raw AI counts: nodes={raw_ai_nodes_count}, edges={raw_ai_edges_count}, services={len(services)}")
+            logger.error(f"AI Generation Pipeline encountered error: {e}")
+            if generation_mode == 'AI_ONLY':
+                raw_resp = getattr(e, 'raw_response', None)
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "error": "Topology generation failed",
+                        "details": str(e),
+                        "raw_ai_response": raw_resp
+                    }
+                )
+            else:
+                logger.warning("Falling back to Deterministic Engine.")
+                ai_enhanced = False
+                
+    # Deterministic Engine Fallback / Direct Execution
+    if not ai_enhanced:
+        logger.info("Running Deterministic Engine (InfrastructureReasoningEngine)")
+        reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
+        raw_topology = reasoning_engine.synthesize_from_intent()
+        topology = reasoning_engine.normalize_topology(raw_topology)
         
-        # Log unregistered node types
-        ALLOWED_TYPES = {
-            "GatewayNode", "FrontendNode", "BackendNode", "DatabaseNode", "CacheNode", 
-            "StorageNode", "SecurityNode", "MonitoringNode", "RegionGroupNode", 
-            "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"
-        }
-        for raw_node in nodes:
-            raw_type = raw_node.get("type")
-            if raw_type not in ALLOWED_TYPES:
-                logger.warning(f"Unknown node type: {raw_type} for node ID: {raw_node.get('id')}")
-                print(f"Unknown node type: {raw_type}")
-            
-        # Ensure all required container nodes exist (if missing, add them, otherwise align them)
+        nodes = topology.get('nodes', [])
+        edges = topology.get('edges', [])
+        
+        # Ensure container nodes and coordinates snap cleanly
         nodes = ensure_container_nodes(nodes, provider, requirements)
-        # Snap resources to parent container groups and set relative positions
         nodes = post_process_nodes(nodes, provider, requirements)
         
-        post_processed_nodes_count = len(nodes)
-        post_processed_edges_count = len(edges)
-        logger.info(f"Pipeline Stage - Post Processed counts: nodes={post_processed_nodes_count}, edges={post_processed_edges_count}")
-        
-        # Post-process nodes minimally to set positions/types to prevent frontend crash
+        # Minimally set position, data, and style for all nodes to prevent frontend crash
         for idx, node in enumerate(nodes):
             node_data = node.get('data') or {}
             node['data'] = node_data
@@ -1487,34 +1620,17 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             if 'private' not in node_data:
                 node_data['private'] = True
                 
-        # Deduplicate shared resources to clean up any duplicates generated by the LLM
         nodes, edges = deduplicate_shared_resources(nodes, edges)
         
+        # Populate counts for deterministic run
+        raw_ai_nodes_count = 0
+        raw_ai_edges_count = 0
+        post_processed_nodes_count = len(nodes)
+        post_processed_edges_count = len(edges)
         deduplicated_nodes_count = len(nodes)
         deduplicated_edges_count = len(edges)
-        logger.info(f"Pipeline Stage - Deduplicated counts: nodes={deduplicated_nodes_count}, edges={deduplicated_edges_count}")
         
-        # Run validation engine as source of truth
-        validation_findings = validate_and_gate_architecture(
-            nodes,
-            edges,
-            compute_type=requirements.computeType,
-            database_type=requirements.database_type
-        )
-        logger.info(f"Pipeline Stage - Validation findings on attempt {attempt}: {validation_findings}")
-        
-        if not validation_findings:
-            logger.info(f"Topology successfully validated on Attempt {attempt}")
-            break
-        else:
-            logger.warning(f"Validation failed on Attempt {attempt}. Findings: {validation_findings}")
-            
-    # If validation failed after 3 attempts, run the topology healing engine to fix any missing/faulty nodes/edges
-    if validation_findings:
-        logger.info("Running topology healing engine to resolve validation findings")
-        nodes, edges = heal_topology_gates(nodes, edges, provider, requirements)
-        # Re-run post process to snap any newly injected nodes
-        nodes = post_process_nodes(nodes, provider, requirements)
+        services = rebuild_services_registry(nodes)
 
     # Final validation checks and warning list construction
     warnings_list = validate_and_gate_architecture(
@@ -1523,8 +1639,6 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         compute_type=requirements.computeType,
         database_type=requirements.database_type
     )
-    
-    ai_enhanced = True
     
     budget_val = 500.0
     try:
@@ -1540,7 +1654,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     cost_res, complexity_res, secured_res, explanation_res = {}, {}, {}, {}
 
     # 4. Optional AI Enrichment
-    if active_provider and active_provider.lower() not in ['none', 'mock']:
+    if ai_enhanced and active_provider and active_provider.lower() not in ['none', 'mock']:
         try:
             security_agent = SecurityOptimizationAgent(client=llm_client)
             complexity_agent = ComplexityAuditorAgent(client=llm_client)
