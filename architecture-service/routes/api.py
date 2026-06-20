@@ -1076,7 +1076,32 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             logger.warning(f"AI Enhancement failed to plan: {e}. Keeping deterministic baseline.")
 
     # Ensure all required container nodes exist and post-process them
-    if not ai_enhanced:
+    if ai_enhanced:
+        # Minimal sanitization to prevent frontend crash
+        for idx, node in enumerate(nodes):
+            node['data'] = node.get('data') or {}
+            if 'position' not in node or not isinstance(node['position'], dict):
+                node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+            if 'style' not in node or not isinstance(node['style'], dict):
+                node['style'] = {}
+            if 'provider' not in node['data']:
+                node['data']['provider'] = provider
+            if 'subnet' not in node['data']:
+                node['data']['subnet'] = node.get('parentNode', '')
+            if 'resource_type' not in node['data']:
+                node['data']['resource_type'] = str(node.get('type', 'resource')).lower()
+            if 'cost' not in node['data']:
+                node['data']['cost'] = "~$25/mo"
+            if 'estimated_monthly_cost' not in node['data']:
+                node['data']['estimated_monthly_cost'] = 25.0
+            if 'public' not in node['data']:
+                node['data']['public'] = False
+            if 'private' not in node['data']:
+                node['data']['private'] = True
+        
+        # Deduplicate shared resources in the AI topology to prevent multiple repeated Key Vaults, Monitor, etc.
+        nodes, edges = deduplicate_shared_resources(nodes, edges)
+    else:
         nodes = ensure_container_nodes(nodes, provider, requirements)
         nodes = post_process_nodes(nodes, provider, requirements)
         nodes, edges = deduplicate_shared_resources(nodes, edges)
