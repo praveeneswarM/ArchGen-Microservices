@@ -1033,82 +1033,117 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             cached['execution_time_ms'] = exec_ms
             return ArchitectureResponse(**cached)
 
-    # 2. Deterministic Engine (Primary Generator)
+    # 2. Pure AI Pipeline (Primary Generator)
     llm_client = request.app.state.provider_manager
     provider = requirements.cloud_provider.lower()
-    
-    logger.info("Running Deterministic Engine as Primary Generator")
-    reasoning_engine = InfrastructureReasoningEngine(cloud_provider=provider, requirements=requirements)
-    workload = reasoning_engine.classify_workload(requirements.app_description, requirements.expected_users)
-    raw_topology = reasoning_engine.synthesize_from_intent()
-    topology = reasoning_engine.normalize_topology(raw_topology)
-    
-    nodes = topology.get('nodes', [])
-    edges = topology.get('edges', [])
-    services = topology.get('services', [])
-    
-    # 3. Optional AI Enhancement Layer
-    ai_enhanced = False
     active_provider = getattr(llm_client, 'active_provider', 'None')
     
-    if active_provider and active_provider.lower() not in ['none', 'mock']:
+    from agents.requirement_analysis import RequirementAnalysisAgent
+    from agents.architecture_planning import ArchitecturePlanningAgent
+    from agents.topology_generation import TopologyGenerationAgent
+    
+    req_agent = RequirementAnalysisAgent(client=llm_client)
+    plan_agent = ArchitecturePlanningAgent(client=llm_client)
+    topology_agent = TopologyGenerationAgent(client=llm_client)
+    
+    logger.info("Starting Pure AI Requirement Analysis")
+    analysis = await req_agent.analyze(requirements)
+    
+    logger.info("Starting Pure AI Architecture Planning")
+    plan = await plan_agent.plan(analysis)
+    
+    nodes = []
+    edges = []
+    services = []
+    validation_findings = []
+    
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        logger.info(f"Topology Generation Attempt {attempt}/{max_attempts}")
         try:
-            from agents.requirement_analysis import RequirementAnalysisAgent
-            from agents.architecture_planning import ArchitecturePlanningAgent
+            topology_result = await topology_agent.generate(
+                analyzed_requirements=analysis,
+                plan=plan,
+                validation_findings=validation_findings if validation_findings else None
+            )
             
-            req_agent = RequirementAnalysisAgent(client=llm_client)
-            plan_agent = ArchitecturePlanningAgent(client=llm_client)
-            
-            logger.info("Starting AI Requirement Analysis (Optional AI Enhancement)")
-            analysis = await req_agent.analyze(requirements)
-            
-            logger.info("Starting AI Architecture Planning (Optional AI Enhancement)")
-            ai_topology = await plan_agent.plan(analysis)
-            
-            ai_nodes = ai_topology.get('nodes', [])
-            ai_edges = ai_topology.get('edges', [])
-            ai_services = ai_topology.get('services', [])
-            
-            if ai_nodes:
-                nodes = ai_nodes
-                edges = ai_edges
-                services = ai_services
-                ai_enhanced = True
-                logger.info("AI Enhancement successfully generated topology via AI agents")
+            nodes = topology_result.get('nodes', [])
+            edges = topology_result.get('edges', [])
+            services = topology_result.get('services', [])
         except Exception as e:
-            logger.warning(f"AI Enhancement failed to plan: {e}. Keeping deterministic baseline.")
-
-    # Ensure all required container nodes exist and post-process them
-    if ai_enhanced:
-        # Minimal sanitization to prevent frontend crash
+            logger.error(f"Topology Generation Agent failed on attempt {attempt}: {e}")
+            if attempt == max_attempts:
+                raise e
+            continue
+            
+        if not isinstance(nodes, list):
+            nodes = []
+        if not isinstance(edges, list):
+            edges = []
+        if not isinstance(services, list):
+            services = []
+            
+        # Post-process nodes minimally to set positions/types to prevent frontend crash
         for idx, node in enumerate(nodes):
-            node['data'] = node.get('data') or {}
+            node_data = node.get('data') or {}
+            node['data'] = node_data
+            
             if 'position' not in node or not isinstance(node['position'], dict):
                 node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+            else:
+                node['position']['x'] = float(node['position'].get('x', 0.0))
+                node['position']['y'] = float(node['position'].get('y', 0.0))
+                
             if 'style' not in node or not isinstance(node['style'], dict):
                 node['style'] = {}
-            if 'provider' not in node['data']:
-                node['data']['provider'] = provider
-            if 'subnet' not in node['data']:
-                node['data']['subnet'] = node.get('parentNode', '')
-            if 'resource_type' not in node['data']:
-                node['data']['resource_type'] = str(node.get('type', 'resource')).lower()
-            if 'cost' not in node['data']:
-                node['data']['cost'] = "~$25/mo"
-            if 'estimated_monthly_cost' not in node['data']:
-                node['data']['estimated_monthly_cost'] = 25.0
-            if 'public' not in node['data']:
-                node['data']['public'] = False
-            if 'private' not in node['data']:
-                node['data']['private'] = True
-        
-        # Deduplicate shared resources in the AI topology to prevent multiple repeated Key Vaults, Monitor, etc.
-        nodes, edges = deduplicate_shared_resources(nodes, edges)
-    else:
-        nodes = ensure_container_nodes(nodes, provider, requirements)
-        nodes = post_process_nodes(nodes, provider, requirements)
-        nodes, edges = deduplicate_shared_resources(nodes, edges)
+                
+            # Populate required metadata fields
+            node_data['resource_id'] = node_data.get('resource_id') or node.get('id', '')
+            node_data['resource_type'] = node_data.get('resource_type') or str(node.get('type', 'resource')).lower()
+            node_data['terraform_resource'] = node_data.get('terraform_resource') or ''
+            node_data['provider'] = node_data.get('provider') or provider
+            node_data['subnet'] = node_data.get('subnet') or node.get('parentNode', '') or ''
+            node_data['cost_estimate'] = node_data.get('cost_estimate') or node_data.get('cost', '') or ''
             
+            # Sanitization of other properties expected by frontend
+            if 'estimated_monthly_cost' not in node_data:
+                try:
+                    cost_val = float(re.sub(r'[^\d.]', '', str(node_data.get('cost_estimate', '25'))))
+                    node_data['estimated_monthly_cost'] = cost_val
+                except Exception:
+                    node_data['estimated_monthly_cost'] = 25.0
+            if 'public' not in node_data:
+                node_data['public'] = False
+            if 'private' not in node_data:
+                node_data['private'] = True
+                
+        # Deduplicate shared resources to clean up any duplicates generated by the LLM
+        nodes, edges = deduplicate_shared_resources(nodes, edges)
+        
+        # Run validation engine as source of truth
+        validation_findings = validate_and_gate_architecture(
+            nodes,
+            edges,
+            compute_type=requirements.computeType,
+            database_type=requirements.database_type
+        )
+        
+        if not validation_findings:
+            logger.info(f"Topology successfully validated on Attempt {attempt}")
+            break
+        else:
+            logger.warning(f"Validation failed on Attempt {attempt}. Findings: {validation_findings}")
+
+    # Final validation checks and warning list construction
+    warnings_list = validate_and_gate_architecture(
+        nodes,
+        edges,
+        compute_type=requirements.computeType,
+        database_type=requirements.database_type
+    )
+    
+    ai_enhanced = True
+    
     budget_val = 500.0
     try:
         budget_str = re.sub(r'[^\d.]', '', requirements.monthly_budget)
@@ -1183,7 +1218,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     # Determine provider/model names to return (never return mock)
     active_provider_val = active_provider if ai_enhanced else 'deterministic'
     active_model_val = getattr(llm_client, 'active_model', 'Deterministic Engine') if ai_enhanced else 'Deterministic Engine'
-    generation_source = f"deterministic+{active_provider_val.lower()}"
+    generation_source = f"pure_ai+{active_provider_val.lower()}"
 
     resp_dict = {
         'nodes': nodes,
@@ -1203,7 +1238,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         'security_score': arch_scores.get('security_score', int(secured_res.get('security_score', 85))),
         'security_findings': secured_res.get('security_findings', []),
         'compliance_checks': secured_res.get('compliance_checks', []),
-        'explanation': explanation_res.get('explanation', 'A fully deterministic auto-generated cloud architecture tailored to your workload profile.'),
+        'explanation': explanation_res.get('explanation', 'An AI-generated cloud architecture tailored to your workload profile.'),
         'alternatives_considered': explanation_res.get('alternatives_considered', ''),
         'justification_for_choices': explanation_res.get('justification_for_choices', ''),
         'terraform_modules': terraform_modules,
@@ -1227,6 +1262,15 @@ async def generate_terraform(request: TerraformRequest):
         edges_dict = [edge.model_dump() for edge in request.edges]
         services_dict = [svc.model_dump() for svc in request.services]
 
+        # Run validation engine as source of truth. Compile only approved architectures.
+        validation_findings = validate_and_gate_architecture(nodes_dict, edges_dict)
+        if validation_findings:
+            logger.warning(f"Terraform compilation blocked due to validation failures: {validation_findings}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Architecture validation failed. Compilation blocked. Findings: {', '.join(validation_findings)}"
+            )
+
         rendered = tf_engine.generate(
             nodes=nodes_dict,
             edges=edges_dict,
@@ -1242,6 +1286,8 @@ async def generate_terraform(request: TerraformRequest):
             instructions=rendered.get('instructions', ''),
             warnings=rendered.get('warnings', [])
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f'HCL compilation failed: {e}')
         raise HTTPException(status_code=500, detail=str(e))
