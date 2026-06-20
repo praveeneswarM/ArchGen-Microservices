@@ -1083,6 +1083,11 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         if not isinstance(services, list):
             services = []
             
+        # Ensure all required container nodes exist (if missing, add them, otherwise align them)
+        nodes = ensure_container_nodes(nodes, provider, requirements)
+        # Snap resources to parent container groups and set relative positions
+        nodes = post_process_nodes(nodes, provider, requirements)
+        
         # Post-process nodes minimally to set positions/types to prevent frontend crash
         for idx, node in enumerate(nodes):
             node_data = node.get('data') or {}
