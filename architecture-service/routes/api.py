@@ -1778,6 +1778,12 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                 nodes, edges = heal_topology_gates(nodes, edges, provider, requirements)
                 # Re-run post process to snap any newly injected nodes and align IDs
                 nodes = post_process_nodes(nodes, provider, requirements, edges)
+                
+                # Update counts after healing
+                post_processed_nodes_count = len(nodes)
+                post_processed_edges_count = len(edges)
+                deduplicated_nodes_count = len(nodes)
+                deduplicated_edges_count = len(edges)
             
             ai_enhanced = True
             
