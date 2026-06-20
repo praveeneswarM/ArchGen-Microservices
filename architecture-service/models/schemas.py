@@ -114,6 +114,7 @@ class TerraformResponse(BaseModel):
     outputs_tf: str
     terraform_tfvars: str
     instructions: str
+    warnings: Optional[List[str]] = []
 
 class AiAssistRequest(BaseModel):
     nodes: List[NodeModel]

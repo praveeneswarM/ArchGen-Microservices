@@ -115,4 +115,5 @@ export interface TerraformResponse {
   outputs_tf: string;
   terraform_tfvars: string;
   instructions: string;
+  warnings?: string[];
 }

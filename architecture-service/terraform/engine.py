@@ -1,9 +1,12 @@
 import os
+import re
 import logging
 from typing import List, Dict, Any
+
 from jinja2 import Environment, FileSystemLoader
 
 logger = logging.getLogger("terraform_engine")
+
 
 class TerraformEngine:
     def __init__(self):
@@ -19,7 +22,6 @@ class TerraformEngine:
         
         # Add custom filter to sanitize node IDs for strict Azure/AWS naming rules
         def sanitize_id(value: str) -> str:
-            import re
             # Remove all non-alphanumeric chars, lowercased.
             safe_val = re.sub(r'[^a-z0-9]', '', str(value).lower())
             # Truncate to 10 chars to prevent max-length violations (like Storage 24-char limit)
@@ -30,10 +32,75 @@ class TerraformEngine:
             
         self.env.filters['sanitize_id'] = sanitize_id
 
-    def generate(self, nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], services: List[Dict[str, Any]], provider: str) -> Dict[str, str]:
+    def _detect_compute_type(self, nodes: List[Dict[str, Any]]) -> str:
+        """Auto-detect compute platform from the architecture node list."""
+        node_ids_lower = {str(n.get("id", "")).lower() for n in nodes}
+        if "aks-cluster" in node_ids_lower or "aks-system-node-pool" in node_ids_lower:
+            return "AKS"
+        elif "app-service-plan" in node_ids_lower or "web-app" in node_ids_lower:
+            return "App Service"
+        elif "container-app-env" in node_ids_lower:
+            return "Container Apps"
+        return "AKS"  # default
+
+    def validate_terraform_drift(self, main_tf: str, nodes: List[Dict[str, Any]], compute_type: str) -> List[str]:
+        """
+        Compare the rendered main.tf content with the input architecture nodes to detect drift.
+        Checks: resource counts, resource names, subnet placements, and compute platform consistency.
+        """
+        warnings = []
+        
+        # 1. Extract all Terraform resource blocks: resource "type" "name" {
+        tf_resources = re.findall(r'resource\s+"([^"]+)"\s+"([^"]+)"', main_tf)
+        tf_resource_types = [r[0] for r in tf_resources]
+        tf_resource_names = [r[1] for r in tf_resources]
+        
+        # 2. Count architecture nodes (exclude container/group nodes)
+        group_types = {"RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"}
+        arch_resource_nodes = [n for n in nodes if n.get("type") not in group_types]
+        
+        # 3. Check compute platform alignment
+        compute_upper = compute_type.upper().replace("_", " ").replace("-", " ")
+        if "AKS" in compute_upper or "KUBERNETES" in compute_upper:
+            if "azurerm_kubernetes_cluster" not in tf_resource_types:
+                warnings.append("Terraform Drift: AKS compute selected but azurerm_kubernetes_cluster not found in HCL.")
+            if any("azurerm_service_plan" in t for t in tf_resource_types):
+                warnings.append("Terraform Drift: AKS compute selected but azurerm_service_plan found (App Service substitution).")
+        elif "APP SERVICE" in compute_upper or "WEB APP" in compute_upper:
+            if "azurerm_service_plan" not in tf_resource_types:
+                warnings.append("Terraform Drift: App Service compute selected but azurerm_service_plan not found in HCL.")
+            if any("azurerm_kubernetes_cluster" in t for t in tf_resource_types):
+                warnings.append("Terraform Drift: App Service compute selected but azurerm_kubernetes_cluster found (AKS substitution).")
+        else:
+            if "azurerm_container_app_environment" not in tf_resource_types:
+                warnings.append("Terraform Drift: Container Apps compute selected but azurerm_container_app_environment not found in HCL.")
+        
+        # 4. Validate subnet resource existence
+        subnet_names = ["subnet-ingress", "subnet-app", "subnet-data", "subnet-mgmt", "subnet-pe"]
+        for sub in subnet_names:
+            sanitized = re.sub(r'[^a-z0-9]', '', sub.lower())
+            check_id = sanitized[:6] + sanitized[-4:] if len(sanitized) > 10 else sanitized
+            if check_id not in tf_resource_names and sub.replace("-", "") not in tf_resource_names:
+                warnings.append(f"Terraform Drift: Subnet '{sub}' not found in rendered HCL resources.")
+        
+        # 5. Check for basic resource count alignment
+        tf_resource_count = len(tf_resources)
+        if tf_resource_count < 10:
+            warnings.append(f"Terraform Drift: Only {tf_resource_count} Terraform resources rendered, expected at least 10.")
+        
+        # 6. Check DB resource exists
+        has_db_in_arch = any(n.get("type") == "DatabaseNode" for n in nodes)
+        has_db_in_tf = any("postgresql" in t or "rds" in t or "cloudsql" in t for t in tf_resource_types)
+        if has_db_in_arch and not has_db_in_tf:
+            warnings.append("Terraform Drift: Database nodes exist in architecture but no database resource found in HCL.")
+        
+        return warnings
+
+    def generate(self, nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], services: List[Dict[str, Any]], provider: str) -> Dict[str, Any]:
         """
         Renders Jinja2 templates into multi-file compilable Terraform blocks based on nodes & services.
         Validates for duplicate identical modules and namespaces resources.
+        Returns HCL files and optional round-trip drift warnings.
         """
         logger.info(f"Rendering Terraform templates for cloud provider: {provider}")
         try:
@@ -41,13 +108,15 @@ class TerraformEngine:
             unique_nodes = {n["id"]: n for n in nodes}.values()
             nodes = list(unique_nodes)
             
+            # Detect compute type from architecture nodes
+            compute_type = self._detect_compute_type(nodes)
+            
             # Detect shared infrastructural needs
             has_backend = any(n.get("type") == "BackendNode" for n in nodes)
             has_frontend = any(n.get("type") == "FrontendNode" for n in nodes)
             has_database = any(n.get("type") == "DatabaseNode" for n in nodes)
 
             # Extract custom configurations from nodes
-            import re
             project_name_val = "archgen"
             region_val = "eastus" if provider.lower() == "azure" else ("us-east-1" if provider.lower() == "aws" else "us-central1")
             rg_val = "rg-production"
@@ -60,6 +129,12 @@ class TerraformEngine:
                 "subnet-app": "10.0.2.0/24",
                 "subnet-data": "10.0.3.0/24"
             }
+            
+            # Extract microservice node IDs for Kubernetes resource rendering
+            microservice_nodes = [
+                n for n in nodes
+                if str(n.get("id", "")).lower().startswith("svc-")
+            ]
             
             for node in nodes:
                 n_id = str(node.get("id", "")).lower()
@@ -162,7 +237,9 @@ class TerraformEngine:
                 "region": region_clean,
                 "resource_group": rg_val,
                 "vnet_cidr": vnet_cidr_val,
-                "subnet_cidrs": subnet_cidrs
+                "subnet_cidrs": subnet_cidrs,
+                "compute_type": compute_type,
+                "microservice_nodes": microservice_nodes
             }
             
             provider_lower = provider.lower()
@@ -188,6 +265,9 @@ class TerraformEngine:
             variables_tf = variables_template.render(context)
             outputs_tf = outputs_template.render(context)
             tfvars_tf = tfvars_template.render(context)
+            
+            # Round-trip drift validation
+            drift_warnings = self.validate_terraform_drift(main_tf, nodes, compute_type)
             
             # Generate deployment guide text dynamically based on provider
             cli_auth = "az login"
@@ -223,7 +303,8 @@ class TerraformEngine:
                 "variables_tf": variables_tf,
                 "outputs_tf": outputs_tf,
                 "terraform_tfvars": tfvars_tf,
-                "instructions": instructions
+                "instructions": instructions,
+                "warnings": drift_warnings
             }
         except Exception as e:
             logger.error(f"Failed rendering Terraform HCL templates: {e}")

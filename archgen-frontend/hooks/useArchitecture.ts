@@ -362,6 +362,7 @@ export function useArchitecture() {
       const nextNodes = architecture.nodes.map((node) => {
         const nextNode = { ...node };
         const label = (node.data.label || "").toLowerCase();
+        const nodeId = (node.id || "").toLowerCase();
 
         // 1. Detect AKS Node/Instance count changes in HCL code
         if (node.type === "BackendNode" && label.includes("aks")) {
@@ -392,6 +393,104 @@ export function useArchitecture() {
                 ...nextNode.data,
                 cost: derivedTier === "Premium" ? "~$240/mo" : derivedTier === "Basic" ? "~$45/mo" : "~$115/mo",
                 customMetadata: { ...meta, pricingTier: derivedTier }
+              };
+              canvasModified = true;
+            }
+          }
+        }
+
+        // 3. Detect VNet CIDR changes (address_space = ["X.X.X.X/Y"])
+        if (node.type === "VNetGroupNode" || nodeId === "vnet-group") {
+          const vnetCidrMatch = newCode.match(/address_space\s*=\s*\["([^"]+)"\]/);
+          if (vnetCidrMatch) {
+            const newCidr = vnetCidrMatch[1];
+            const currentLabel = nextNode.data.label || "";
+            if (!currentLabel.includes(newCidr)) {
+              nextNode.data = {
+                ...nextNode.data,
+                label: `Virtual Network (VPC): ${newCidr}`
+              };
+              canvasModified = true;
+            }
+          }
+        }
+
+        // 4. Detect Subnet CIDR changes (address_prefixes = ["X.X.X.X/Y"])
+        if (node.type === "SubnetGroupNode" && nodeId.startsWith("subnet-")) {
+          const subnetPattern = new RegExp(
+            `resource\\s+"azurerm_subnet"\\s+"[^"]*${nodeId.replace(/-/g, "")}[^"]*"[\\s\\S]*?address_prefixes\\s*=\\s*\\["([^"]+)"\\]`,
+            "i"
+          );
+          const subnetMatch = newCode.match(subnetPattern);
+          if (subnetMatch) {
+            const newCidr = subnetMatch[1];
+            const currentLabel = nextNode.data.label || "";
+            if (!currentLabel.includes(newCidr)) {
+              const subnetName = nodeId.replace("subnet-", "");
+              const displayName = subnetName.charAt(0).toUpperCase() + subnetName.slice(1);
+              nextNode.data = {
+                ...nextNode.data,
+                label: `${displayName} Subnet (${newCidr})`
+              };
+              canvasModified = true;
+            }
+          }
+        }
+
+        // 5. Detect VM size / SKU tier changes for backend compute nodes
+        if (node.type === "BackendNode" && (label.includes("aks") || label.includes("cluster") || label.includes("pool"))) {
+          const vmSizeMatch = newCode.match(/vm_size\s*=\s*"([^"]+)"/);
+          if (vmSizeMatch) {
+            const vmSize = vmSizeMatch[1];
+            const meta = (nextNode.data as any).customMetadata || {};
+            const derivedTier = vmSize.includes("D8") || vmSize.includes("D4") ? "Premium" : vmSize.includes("B2") ? "Basic" : "Standard";
+            if (meta.pricingTier !== derivedTier) {
+              nextNode.data = {
+                ...nextNode.data,
+                customMetadata: { ...meta, pricingTier: derivedTier }
+              };
+              canvasModified = true;
+            }
+          }
+        }
+
+        // 6. Detect Redis capacity / SKU changes
+        if (node.type === "CacheNode" && label.includes("redis")) {
+          const redisSkuMatch = newCode.match(/sku_name\s*=\s*"(Premium|Standard|Basic)"/i);
+          if (redisSkuMatch) {
+            const redisTier = redisSkuMatch[1];
+            const meta = (nextNode.data as any).customMetadata || {};
+            if (meta.pricingTier !== redisTier) {
+              nextNode.data = {
+                ...nextNode.data,
+                cost: redisTier === "Premium" ? "~$90/mo" : redisTier === "Basic" ? "~$15/mo" : "~$45/mo",
+                customMetadata: { ...meta, pricingTier: redisTier }
+              };
+              canvasModified = true;
+            }
+          }
+        }
+
+        // 7. Detect min/max replicas changes (Container Apps, HPA)
+        if (node.type === "BackendNode" && nodeId.startsWith("svc-")) {
+          const minReplicasMatch = newCode.match(/min_replicas\s*=\s*(\d+)/);
+          const maxReplicasMatch = newCode.match(/max_replicas\s*=\s*(\d+)/);
+          if (minReplicasMatch || maxReplicasMatch) {
+            const meta = (nextNode.data as any).customMetadata || {};
+            let changed = false;
+            const newMeta = { ...meta };
+            if (minReplicasMatch && newMeta.minReplicas !== minReplicasMatch[1]) {
+              newMeta.minReplicas = minReplicasMatch[1];
+              changed = true;
+            }
+            if (maxReplicasMatch && newMeta.maxReplicas !== maxReplicasMatch[1]) {
+              newMeta.maxReplicas = maxReplicasMatch[1];
+              changed = true;
+            }
+            if (changed) {
+              nextNode.data = {
+                ...nextNode.data,
+                customMetadata: newMeta
               };
               canvasModified = true;
             }
