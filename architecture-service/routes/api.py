@@ -1060,6 +1060,55 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     if len(nodes) < 3:
         validation_findings.append(f"Quality Gate: Node count {len(nodes)} is too low (expected at least 3 nodes).")
 
+    # 1e. Required Enterprise Isolation & Governance Components
+    # Secrets Vault Presence
+    has_vault = any(
+        str(n.get("type", "")).lower() == "securitynode" and any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["vault", "keyvault", "secret"])
+        for n in nodes
+    )
+    if not has_vault:
+        validation_findings.append("Quality Gate: Secrets vault node (Key Vault / Secrets Manager) is missing.")
+
+    # Centralized Monitoring Presence
+    has_monitoring = any(
+        str(n.get("type", "")).lower() == "monitoringnode" or any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["monitor", "insights", "analytics", "log-analytics"])
+        for n in nodes
+    )
+    if not has_monitoring:
+        validation_findings.append("Quality Gate: Centralized logging/monitoring node (Log Analytics / CloudWatch) is missing.")
+
+    # Backup & Recovery Vault Presence
+    has_backup = any(
+        any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["backup", "recovery", "vault"]) and "key" not in str(n.get("id", "")).lower()
+        for n in nodes
+    )
+    if not has_backup:
+        validation_findings.append("Quality Gate: Backup/Recovery Vault node is missing.")
+
+    # Network Security Groups (NSGs / Subnet Access Policies)
+    has_nsgs = any(
+        any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["nsg", "security-group", "security_group", "firewall"])
+        for n in nodes
+    )
+    if not has_nsgs:
+        validation_findings.append("Quality Gate: Subnet Network Security Groups (NSGs) / Security Groups are missing from the subnets.")
+
+    # Route Tables
+    has_rt = any(
+        any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["rt-", "route-table", "routetable", "route_table"])
+        for n in nodes
+    )
+    if not has_rt:
+        validation_findings.append("Quality Gate: Subnet Route Tables are missing.")
+
+    # Private Endpoints for backend data/storage
+    has_pe = any(
+        "pe-" in str(n.get("id", "")).lower() or "pe_" in str(n.get("id", "")).lower() or "private-endpoint" in str(n.get("id", "")).lower() or "privateendpoint" in str(n.get("id", "")).lower() or "private endpoint" in str(n.get("data", {}).get("label", "")).lower()
+        for n in nodes
+    )
+    if not has_pe:
+        validation_findings.append("Quality Gate: Private Endpoints (PE) for secure backend database and storage connections are missing.")
+
     # Fail validation if node renderer cannot resolve a node type
     ALLOWED_TYPES = {
         "GatewayNode", "FrontendNode", "BackendNode", "DatabaseNode", "CacheNode", 
