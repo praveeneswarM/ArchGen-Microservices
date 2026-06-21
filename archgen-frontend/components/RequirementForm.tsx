@@ -241,11 +241,17 @@ RTO: ${rto}
 RPO: ${rpo}
     `.trim();
 
+    let numericBudget = "1000";
+    if (budget === "Startup") numericBudget = "200";
+    else if (budget === "Small Business") numericBudget = "1000";
+    else if (budget === "Enterprise") numericBudget = "5000";
+    else if (budget === "Unlimited") numericBudget = "50000";
+
     onSubmit({
       app_description: appDescription,
       expected_users: expectedUsers,
-      monthly_budget: budget,
-      cloud_provider: cloudProvider === "Let AI Decide" ? "azure" : cloudProvider,
+      monthly_budget: numericBudget,
+      cloud_provider: cloudProvider === "let ai decide" || cloudProvider === "Let AI Decide" ? "azure" : cloudProvider,
       additional_notes: structuredNotes,
       application_type: workloadType,
       scalability_preference: expectedUsers,
@@ -488,7 +494,7 @@ RPO: ${rpo}
                   onChange={(e) => handleProviderChange(e.target.value)}
                   className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
                 >
-                  <option value="Let AI Decide">Let AI Decide</option>
+                  <option value="let ai decide">Let AI Decide</option>
                   <option value="azure">Azure</option>
                   <option value="aws">AWS</option>
                   <option value="gcp">GCP</option>
