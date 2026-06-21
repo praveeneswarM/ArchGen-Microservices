@@ -1056,60 +1056,7 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     if not has_compute:
         validation_findings.append("Quality Gate: Compute engine platform node is missing.")
 
-    # Validate minimal node count (at least VNet, Subnet, and Compute)
-    if len(nodes) < 3:
-        validation_findings.append(f"Quality Gate: Node count {len(nodes)} is too low (expected at least 3 nodes).")
-
-    # 1e. Required Enterprise Isolation & Governance Components
-    # Secrets Vault Presence
-    has_vault = any(
-        str(n.get("type", "")).lower() == "securitynode" and any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["vault", "keyvault", "secret"])
-        for n in nodes
-    )
-    if not has_vault:
-        validation_findings.append("Quality Gate: Secrets vault node (Key Vault / Secrets Manager) is missing.")
-
-    # Centralized Monitoring Presence
-    has_monitoring = any(
-        str(n.get("type", "")).lower() == "monitoringnode" or any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["monitor", "insights", "analytics", "log-analytics"])
-        for n in nodes
-    )
-    if not has_monitoring:
-        validation_findings.append("Quality Gate: Centralized logging/monitoring node (Log Analytics / CloudWatch) is missing.")
-
-    # Backup & Recovery Vault Presence
-    has_backup = any(
-        any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["backup", "recovery", "vault"]) and "key" not in str(n.get("id", "")).lower()
-        for n in nodes
-    )
-    if not has_backup:
-        validation_findings.append("Quality Gate: Backup/Recovery Vault node is missing.")
-
-    # Network Security Groups (NSGs / Subnet Access Policies)
-    has_nsgs = any(
-        any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["nsg", "security-group", "security_group", "firewall"])
-        for n in nodes
-    )
-    if not has_nsgs:
-        validation_findings.append("Quality Gate: Subnet Network Security Groups (NSGs) / Security Groups are missing from the subnets.")
-
-    # Route Tables
-    has_rt = any(
-        any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["rt-", "route-table", "routetable", "route_table"])
-        for n in nodes
-    )
-    if not has_rt:
-        validation_findings.append("Quality Gate: Subnet Route Tables are missing.")
-
-    # Private Endpoints for backend data/storage
-    has_pe = any(
-        "pe-" in str(n.get("id", "")).lower() or "pe_" in str(n.get("id", "")).lower() or "private-endpoint" in str(n.get("id", "")).lower() or "privateendpoint" in str(n.get("id", "")).lower() or "private endpoint" in str(n.get("data", {}).get("label", "")).lower()
-        for n in nodes
-    )
-    if not has_pe:
-        validation_findings.append("Quality Gate: Private Endpoints (PE) for secure backend database and storage connections are missing.")
-
-    # 1f. Requirement Coverage Quality Gate Checks
+    # 1e. Assess Workload Risk
     def get_req_val(key, default=None):
         if not requirements:
             return default
@@ -1120,87 +1067,102 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     app_desc = str(get_req_val("app_description", "") or get_req_val("appDescription", "")).lower()
     app_type = str(get_req_val("application_type", "") or get_req_val("applicationType", "")).lower()
     workload_profile = str(get_req_val("workload_profile", "")).lower()
-    
-    # Classify the workload profile based on heuristics
-    profile = "general"
-    if "saas" in workload_profile or "saas" in app_type or "saas" in app_desc:
-        profile = "saas"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ecommerce", "e-commerce", "shopping", "store", "payment"]):
-        profile = "e-commerce"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["streaming", "video", "media", "audio", "tv"]):
-        profile = "streaming"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["banking", "finance", "bank", "pci"]):
-        profile = "banking"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ai", "inference", "gpu", "ml", "deep learning", "model hosting"]):
-        profile = "ai"
 
+    compliance_str = str(get_req_val("security_level", "") or get_req_val("compliance_standards", "")).lower()
+    sensitivity_str = str(get_req_val("security_level", "") or get_req_val("data_sensitivity", "")).lower()
+    availability_target = str(get_req_val("availability_target", "") or get_req_val("availability_requirements", "")).lower()
+    budget_str = str(get_req_val("monthly_budget", "")).lower()
+    
+    has_pci_or_sensitive = any(c in compliance_str or c in sensitivity_str for c in ["pci", "hipaa", "gdpr", "soc2", "iso27001", "high", "critical"])
+    is_enterprise = any(b in budget_str for b in ["enterprise", "unlimited", "5000", "50000"])
+    is_mission_critical = any(a in availability_target for a in ["high availability", "mission critical"])
+    
+    requires_advanced_security = has_pci_or_sensitive or is_enterprise
+    requires_backup_dr = is_mission_critical or any(s in sensitivity_str for s in ["high", "critical"])
+
+    # 1f. Extract Required Capabilities
+    capabilities_raw = get_req_val("required_capabilities")
+    required_caps = []
+    if isinstance(capabilities_raw, list):
+        required_caps = [str(c).lower().strip() for c in capabilities_raw]
+
+    if not required_caps:
+        # Heuristically derive capabilities if not explicitly passed
+        if "upload" in app_desc or "file" in app_desc or "document" in app_desc or "model storage" in app_desc:
+            required_caps.append("object_storage")
+        if "caching" in app_desc or "redis" in app_desc or "cache" in app_desc or "100k" in app_desc or "10k" in app_desc:
+            required_caps.append("caching")
+        if "secret" in app_desc or "vault" in app_desc or "credential" in app_desc or "password" in app_desc or requires_advanced_security:
+            required_caps.append("secrets_management")
+        if requires_backup_dr or "backup" in app_desc or "recovery" in app_desc:
+            required_caps.append("disaster_recovery")
+        if requires_advanced_security or "private connect" in app_desc or "private endpoint" in app_desc:
+            required_caps.append("secure_connectivity")
+        if "ai" in app_desc or "gpu" in app_desc or "inference" in app_desc or "ml" in app_desc:
+            required_caps.append("gpu_compute")
+        if "notification" in app_desc or "message" in app_desc or "event" in app_desc or "queue" in app_desc:
+            required_caps.append("messaging")
+        if "global" in app_desc or "cdn" in app_desc or "traffic manager" in app_desc or "cloudfront" in app_desc:
+            required_caps.append("global_distribution")
+
+    # 1g. Capability-Based Validation Checks
     node_ids_lower = {str(n.get("id", "")).lower() for n in nodes}
     node_types_lower = {str(n.get("type", "")).lower() for n in nodes}
 
-    has_db_node = any(t == "databasenode" or "db" in nid or "database" in nid or "postgres" in nid or "mysql" in nid or "cosmos" in nid for nid, t in zip(node_ids_lower, node_types_lower))
-    has_storage_node = any(t == "storagenode" or "storage" in nid or "blob" in nid or "bucket" in nid or "s3" in nid for nid, t in zip(node_ids_lower, node_types_lower))
+    has_db_node = any(t == "databasenode" or any(db_kw in nid for db_kw in ["db", "database", "postgres", "mysql", "cosmos", "sql"]) for nid, t in zip(node_ids_lower, node_types_lower))
+    has_storage_node = any(t == "storagenode" or any(st_kw in nid for st_kw in ["storage", "blob", "bucket", "s3"]) for nid, t in zip(node_ids_lower, node_types_lower))
     has_cache_node = any(t == "cachenode" or "cache" in nid or "redis" in nid for nid, t in zip(node_ids_lower, node_types_lower))
     has_cdn_node = any("cdn" in nid or "frontdoor" in nid or "front-door" in nid or "cloudfront" in nid for nid in node_ids_lower)
     has_auth_vault = any(str(n.get("type", "")).lower() == "securitynode" and any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["vault", "keyvault", "secret", "identity", "auth"]) for n in nodes)
-    has_monitoring_node = any(t == "monitoringnode" or "monitor" in nid or "insights" in nid or "analytics" in nid for nid, t in zip(node_ids_lower, node_types_lower))
+    has_monitoring_node = any(t == "monitoringnode" or any(m_kw in nid for m_kw in ["monitor", "insights", "analytics", "log-analytics"]) for nid, t in zip(node_ids_lower, node_types_lower))
+    has_backup = any(any(k in nid for k in ["backup", "recovery", "vault"]) and "key" not in nid for nid in node_ids_lower)
+    has_nsgs = any(any(k in nid for k in ["nsg", "security-group", "security_group", "firewall"]) for nid in node_ids_lower)
+    has_rt = any(any(k in nid for k in ["rt-", "route-table", "routetable", "route_table"]) for nid in node_ids_lower)
+    has_pe = any("pe-" in nid or "pe_" in nid or "private-endpoint" in nid or "privateendpoint" in nid or "private endpoint" in str(n.get("data", {}).get("label", "")).lower() for n in nodes for nid in [str(n.get("id", "")).lower()])
+    has_messaging = any(any(m in nid for m in ["queue", "event", "bus", "pubsub", "sns", "sqs", "messaging", "servicebus"]) for nid in node_ids_lower)
+    
+    has_gpu = any(
+        "gpu" in str(n.get("id", "")).lower() or 
+        "gpu" in str(n.get("data", {}).get("label", "")).lower() or 
+        "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("pricingTier", "")).lower() or
+        "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("vmSize", "")).lower()
+        for n in nodes
+    )
 
-    if profile == "saas":
-        if not has_db_node:
-            validation_findings.append("Requirement Coverage: SaaS application requires a database (DatabaseNode) to store tenant metadata.")
+    # Validate against capabilities
+    if "object_storage" in required_caps:
         if not has_storage_node:
-            validation_findings.append("Requirement Coverage: SaaS application requires storage (StorageNode/Blob Storage) for user file uploads.")
-        if not has_auth_vault:
-            validation_findings.append("Requirement Coverage: SaaS application requires an authentication or vault security layer (Key Vault / Secrets Management) for tenant credentials encryption.")
-        if not has_monitoring_node:
-            validation_findings.append("Requirement Coverage: SaaS application requires monitoring (MonitoringNode/Log Analytics) for active tenant usage metrics.")
-
-    elif profile == "e-commerce":
-        if not has_db_node:
-            validation_findings.append("Requirement Coverage: E-Commerce application requires a relational/NoSQL database (DatabaseNode) for inventory and orders.")
+            validation_findings.append("Missing Capability: Object Storage. Reason: Application requires file upload/storage capability.")
+            
+    if "caching" in required_caps:
         if not has_cache_node:
-            users_scale = str(get_req_val("expected_users", "") or get_req_val("expectedUsers", "")).lower()
-            if "10k" in users_scale or "100k" in users_scale or "high" in users_scale:
-                validation_findings.append("Requirement Coverage: E-Commerce application requires a caching tier (CacheNode/Redis) to support high concurrent customer shopping traffic.")
-        if not any("payment" in nid or "pay" in nid or "svc-payment" in nid or "gateway" in nid for nid in node_ids_lower):
-            validation_findings.append("Requirement Coverage: E-Commerce application requires payment integration gateway/service nodes.")
-        if not has_monitoring_node:
-            validation_findings.append("Requirement Coverage: E-Commerce application requires monitoring (MonitoringNode) for transaction success tracking.")
-
-    elif profile == "streaming":
-        if not has_storage_node:
-            validation_findings.append("Requirement Coverage: Streaming application requires high-throughput storage (StorageNode/S3/Blob Storage) to host video assets.")
-        if not has_cdn_node:
-            validation_findings.append("Requirement Coverage: Streaming application requires a Content Delivery Network (CDN / Front Door / CloudFront) to cache video segments at the edge.")
-        if not any("gateway" in nid or "lb" in nid or "loadbalancer" in nid or "ingress" in nid for nid in node_ids_lower):
-            validation_findings.append("Requirement Coverage: Streaming application requires a high-scale Ingress Load Balancer / Gateway to route segment requests.")
-
-    elif profile == "banking":
-        if not has_db_node:
-            validation_findings.append("Requirement Coverage: Banking application requires a high-availability database (DatabaseNode).")
+            validation_findings.append("Missing Capability: Caching. Reason: Expected scale or workload caching capability is missing.")
+            
+    if "secrets_management" in required_caps or requires_advanced_security:
         if not has_auth_vault:
-            validation_findings.append("Requirement Coverage: Banking application requires dedicated Key Management and Secrets Vault (Key Vault / Secrets Manager) to secure financial keys.")
-        if not any("audit" in nid or "log-analytics" in nid or "loganalytics" in nid for nid in node_ids_lower):
-            validation_findings.append("Requirement Coverage: Banking application requires audit logging repository for strict financial operations audit logs.")
-        
-        has_nsg_bank = any("nsg" in nid or "security-group" in nid or "firewall" in nid for nid in node_ids_lower)
-        has_rt_bank = any("rt-" in nid or "route-table" in nid for nid in node_ids_lower)
-        has_pe_bank = any("pe-" in nid or "private endpoint" in str(n.get("data", {}).get("label", "")).lower() for n in nodes)
-        if not (has_nsg_bank and has_rt_bank and has_pe_bank):
-            validation_findings.append("Requirement Coverage: Banking application requires complete network isolation (NSGs, Route Tables, and Private Endpoints) for PCI compliance.")
-
-    elif profile == "ai":
-        if not has_storage_node:
-            validation_findings.append("Requirement Coverage: AI platform requires high-speed model storage (StorageNode/Blob Storage) to host AI model weights.")
-        
-        has_gpu = any(
-            "gpu" in str(n.get("id", "")).lower() or 
-            "gpu" in str(n.get("data", {}).get("label", "")).lower() or 
-            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("pricingTier", "")).lower() or
-            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("vmSize", "")).lower()
-            for n in nodes
-        )
+            validation_findings.append("Missing Capability: Secrets Management. Reason: Sensitive credentials/keys vault security is missing.")
+            
+    if "disaster_recovery" in required_caps or requires_backup_dr:
+        if not has_backup:
+            validation_findings.append("Missing Capability: Disaster Recovery. Reason: Backup and recovery strategies are not represented in the architecture.")
+            
+    if "secure_connectivity" in required_caps or requires_advanced_security:
+        if not has_pe:
+            validation_findings.append("Missing Capability: Secure Connectivity. Reason: Private Endpoints are required to secure backend data and storage connections.")
+        if requires_advanced_security and (not has_nsgs or not has_rt):
+            validation_findings.append("Missing Capability: Network Isolation. Reason: Network Security Groups (NSGs) or custom Route Tables are missing from the subnets.")
+            
+    if "gpu_compute" in required_caps:
         if not has_gpu:
-            validation_findings.append("Requirement Coverage: AI GPU workload requires GPU-capable compute resources (AKS GPU nodepool or GPU VM instances).")
+            validation_findings.append("Missing Capability: GPU Compute. Reason: AI inference or GPU-capable compute resources are required.")
+            
+    if "messaging" in required_caps:
+        if not has_messaging:
+            validation_findings.append("Missing Capability: Messaging. Reason: Queuing, message queuing, or eventing service is missing for notifications or async tasks.")
+            
+    if "global_distribution" in required_caps:
+        if not has_cdn_node:
+            validation_findings.append("Missing Capability: Global Content Distribution. Reason: CDN or global traffic distribution service is missing for low latency global reach.")
 
     # Fail validation if node renderer cannot resolve a node type
     ALLOWED_TYPES = {
@@ -1367,18 +1329,19 @@ def compute_node_cost(node: Dict[str, Any], region: str = "eastus") -> float:
 def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], warnings: List[str], provider: str = "azure", requirements: Any = None) -> Dict[str, Any]:
     """
     Calculate 6 completeness scores + overall architecture score:
-    - requirement_coverage_score: Starts at 100, drops for missing profile-specific required nodes
-    - security_score: Starts at 100, drops for missing vault, WAF, PE, NSGs
-    - reliability_score: Drops for missing replicas, backups, HA
-    - scalability_score: Drops for missing autoscale, load balancing, caching
-    - cost_efficiency_score: Based on total cost and overengineering
+    - requirement_coverage_score: Starts at 100, drops for missing profile-specific required nodes / capabilities
+    - security_score: Starts at 100, drops for missing vault, WAF, PE, NSGs if required by workload risk
+    - reliability_score: Drops for missing replicas, backups, HA if required by workload risk
+    - scalability_score: Drops for missing autoscale, load balancing, caching if required by workload risk
+    - cost_efficiency_score: Based on total cost and overengineering/budget alignment
     - terraform_alignment_score: Drops for round-trip drift warnings
     - architecture_score: Weighted average of the above (highest weight on requirement coverage)
     """
     node_ids_lower = {str(n.get("id", "")).lower() for n in nodes}
     node_labels_lower = {str(n.get("data", {}).get("label", "")).lower() for n in nodes}
-    
-    # Classify workload profile
+    node_types_lower = {str(n.get("type", "")).lower() for n in nodes}
+
+    # Classify workload profile and extract requirements
     def get_req_val(key, default=None):
         if not requirements:
             return default
@@ -1389,120 +1352,180 @@ def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[st
     app_desc = str(get_req_val("app_description", "") or get_req_val("appDescription", "")).lower()
     app_type = str(get_req_val("application_type", "") or get_req_val("applicationType", "")).lower()
     workload_profile = str(get_req_val("workload_profile", "")).lower()
+
+    compliance_str = str(get_req_val("security_level", "") or get_req_val("compliance_standards", "")).lower()
+    sensitivity_str = str(get_req_val("security_level", "") or get_req_val("data_sensitivity", "")).lower()
+    availability_target = str(get_req_val("availability_target", "") or get_req_val("availability_requirements", "")).lower()
+    budget_str = str(get_req_val("monthly_budget", "")).lower()
     
-    profile = "general"
-    if "saas" in workload_profile or "saas" in app_type or "saas" in app_desc:
-        profile = "saas"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ecommerce", "e-commerce", "shopping", "store", "payment"]):
-        profile = "e-commerce"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["streaming", "video", "media", "audio", "tv"]):
-        profile = "streaming"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["banking", "finance", "bank", "pci"]):
-        profile = "banking"
-    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ai", "inference", "gpu", "ml", "deep learning", "model hosting"]):
-        profile = "ai"
+    has_pci_or_sensitive = any(c in compliance_str or c in sensitivity_str for c in ["pci", "hipaa", "gdpr", "soc2", "iso27001", "high", "critical"])
+    is_enterprise = any(b in budget_str for b in ["enterprise", "unlimited", "5000", "50000"])
+    is_mission_critical = any(a in availability_target for a in ["high availability", "mission critical"])
+    
+    requires_advanced_security = has_pci_or_sensitive or is_enterprise
+    requires_backup_dr = is_mission_critical or any(s in sensitivity_str for s in ["high", "critical"])
+
+    capabilities_raw = get_req_val("required_capabilities")
+    required_caps = []
+    if isinstance(capabilities_raw, list):
+        required_caps = [str(c).lower().strip() for c in capabilities_raw]
+
+    if not required_caps:
+        # Heuristically derive capabilities
+        if "upload" in app_desc or "file" in app_desc or "document" in app_desc or "model storage" in app_desc:
+            required_caps.append("object_storage")
+        if "caching" in app_desc or "redis" in app_desc or "cache" in app_desc or "100k" in app_desc or "10k" in app_desc:
+            required_caps.append("caching")
+        if "secret" in app_desc or "vault" in app_desc or "credential" in app_desc or "password" in app_desc or requires_advanced_security:
+            required_caps.append("secrets_management")
+        if requires_backup_dr or "backup" in app_desc or "recovery" in app_desc:
+            required_caps.append("disaster_recovery")
+        if requires_advanced_security or "private connect" in app_desc or "private endpoint" in app_desc:
+            required_caps.append("secure_connectivity")
+        if "ai" in app_desc or "gpu" in app_desc or "inference" in app_desc or "ml" in app_desc:
+            required_caps.append("gpu_compute")
+        if "notification" in app_desc or "message" in app_desc or "event" in app_desc or "queue" in app_desc:
+            required_caps.append("messaging")
+        if "global" in app_desc or "cdn" in app_desc or "traffic manager" in app_desc or "cloudfront" in app_desc:
+            required_caps.append("global_distribution")
 
     # Identify nodes
-    has_db = any(n.get("type") == "DatabaseNode" or "db" in str(n.get("id", "")).lower() or "database" in str(n.get("id", "")).lower() for n in nodes)
-    has_storage = any(n.get("type") == "StorageNode" or "storage" in str(n.get("id", "")).lower() or "blob" in str(n.get("id", "")).lower() or "bucket" in str(n.get("id", "")).lower() for n in nodes)
-    has_cache = any(n.get("type") == "CacheNode" or "cache" in str(n.get("id", "")).lower() or "redis" in str(n.get("id", "")).lower() for n in nodes)
-    has_cdn = any("cdn" in str(n.get("id", "")).lower() or "frontdoor" in str(n.get("id", "")).lower() or "cloudfront" in str(n.get("id", "")).lower() for n in nodes)
-    has_vault = any(n.get("type") == "SecurityNode" and any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["vault", "keyvault", "secret"]) for n in nodes)
-    has_mon = any(n.get("type") == "MonitoringNode" or "monitor" in str(n.get("id", "")).lower() or "insights" in str(n.get("id", "")).lower() or "analytics" in str(n.get("id", "")).lower() for n in nodes)
-    has_compute = any(n.get("type") in ["BackendNode", "FrontendNode"] or "cluster" in str(n.get("id", "")).lower() or "plan" in str(n.get("id", "")).lower() or "env" in str(n.get("id", "")).lower() for n in nodes)
+    has_db = any(t == "databasenode" or any(db_kw in nid for db_kw in ["db", "database", "postgres", "mysql", "cosmos", "sql"]) for nid, t in zip(node_ids_lower, node_types_lower))
+    has_storage = any(t == "storagenode" or any(st_kw in nid for st_kw in ["storage", "blob", "bucket", "s3"]) for nid, t in zip(node_ids_lower, node_types_lower))
+    has_cache = any(t == "cachenode" or "cache" in nid or "redis" in nid for nid, t in zip(node_ids_lower, node_types_lower))
+    has_cdn = any("cdn" in nid or "frontdoor" in nid or "front-door" in nid or "cloudfront" in nid for nid in node_ids_lower)
+    has_vault = any(str(n.get("type", "")).lower() == "securitynode" and any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["vault", "keyvault", "secret", "identity", "auth"]) for n in nodes)
+    has_backup = any(any(k in nid for k in ["backup", "recovery", "vault"]) and "key" not in nid for nid in node_ids_lower)
+    has_nsgs = any(any(k in nid for k in ["nsg", "security-group", "security_group", "firewall"]) for nid in node_ids_lower)
+    has_rt = any(any(k in nid for k in ["rt-", "route-table", "routetable", "route_table"]) for nid in node_ids_lower)
+    has_pe = any("pe-" in nid or "pe_" in nid or "private-endpoint" in nid or "privateendpoint" in nid or "private endpoint" in str(n.get("data", {}).get("label", "")).lower() for n in nodes for nid in [str(n.get("id", "")).lower()])
+    has_messaging = any(any(m in nid for m in ["queue", "event", "bus", "pubsub", "sns", "sqs", "messaging", "servicebus"]) for nid in node_ids_lower)
+    has_gpu = any(
+        "gpu" in str(n.get("id", "")).lower() or 
+        "gpu" in str(n.get("data", {}).get("label", "")).lower() or 
+        "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("pricingTier", "")).lower() or
+        "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("vmSize", "")).lower()
+        for n in nodes
+    )
+    has_compute = any(
+        n_type in ["backendnode", "frontendnode"] or 
+        any(x in nid.lower() for x in ["cluster", "env", "plan", "aks", "compute"])
+        for nid, n_type in zip(node_ids_lower, node_types_lower)
+    )
 
-    req_cov_score = 100
-    if profile == "saas":
-        if not has_db: req_cov_score -= 25
-        if not has_storage: req_cov_score -= 20
-        if not has_vault: req_cov_score -= 20
-        if not has_mon: req_cov_score -= 15
-    elif profile == "e-commerce":
-        if not has_db: req_cov_score -= 25
-        if not has_cache:
-            users_scale = str(get_req_val("expected_users", "") or get_req_val("expectedUsers", "")).lower()
-            if "10k" in users_scale or "100k" in users_scale or "high" in users_scale:
-                req_cov_score -= 20
-        if not any("payment" in str(n.get("id", "")).lower() or "pay" in str(n.get("id", "")).lower() or "gateway" in str(n.get("id", "")).lower() for n in nodes):
-            req_cov_score -= 20
-        if not has_mon: req_cov_score -= 15
-    elif profile == "streaming":
-        if not has_storage: req_cov_score -= 25
-        if not has_cdn: req_cov_score -= 25
-        if not any("gateway" in str(n.get("id", "")).lower() or "lb" in str(n.get("id", "")).lower() or "loadbalancer" in str(n.get("id", "")).lower() for n in nodes):
-            req_cov_score -= 20
-    elif profile == "banking":
-        if not has_db: req_cov_score -= 25
-        if not has_vault: req_cov_score -= 25
-        if not any("audit" in str(n.get("id", "")).lower() or "log-analytics" in str(n.get("id", "")).lower() for n in nodes):
-            req_cov_score -= 20
-        has_nsg = any("nsg" in str(n.get("id", "")).lower() or "security-group" in str(n.get("id", "")).lower() or "firewall" in str(n.get("id", "")).lower() for n in nodes)
-        has_rt = any("rt-" in str(n.get("id", "")).lower() or "route-table" in str(n.get("id", "")).lower() for n in nodes)
-        has_pe = any("pe-" in str(n.get("id", "")).lower() or "private endpoint" in str(n.get("data", {}).get("label", "")).lower() for n in nodes)
-        if not (has_nsg and has_rt and has_pe):
-            req_cov_score -= 20
-    elif profile == "ai":
-        if not has_storage: req_cov_score -= 25
-        has_gpu = any(
-            "gpu" in str(n.get("id", "")).lower() or 
-            "gpu" in str(n.get("data", {}).get("label", "")).lower() or 
-            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("pricingTier", "")).lower() or
-            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("vmSize", "")).lower()
-            for n in nodes
-        )
-        if not has_gpu:
-            req_cov_score -= 25
+    cap_fulfillment = {
+        "object_storage": has_storage,
+        "caching": has_cache,
+        "secrets_management": has_vault,
+        "disaster_recovery": has_backup,
+        "secure_connectivity": has_pe,
+        "gpu_compute": has_gpu,
+        "messaging": has_messaging,
+        "global_distribution": has_cdn
+    }
+
+    # Requirement Coverage Checklist
+    checklist = []
+    db_type_val = get_req_val("database_type") or get_req_val("databaseType")
+    if db_type_val and str(db_type_val).lower() not in ["none", "no database", ""]:
+        checklist.append(("database", has_db))
+    compute_type_val = get_req_val("computeType") or get_req_val("compute_type") or get_req_val("application_type") or get_req_val("applicationType")
+    if compute_type_val and str(compute_type_val).lower() not in ["none", ""]:
+        checklist.append(("compute", has_compute))
+        
+    for cap in required_caps:
+        if cap in cap_fulfillment:
+            checklist.append((cap, cap_fulfillment[cap]))
+            
+    if checklist:
+        satisfied_count = sum(1 for item, met in checklist if met)
+        req_cov_score = int((satisfied_count / len(checklist)) * 100)
     else:
-        if not has_db: req_cov_score -= 20
-        if not has_compute: req_cov_score -= 25
-        if not has_mon: req_cov_score -= 15
+        req_cov_score = 100
 
-    req_cov_score = max(0, req_cov_score)
-
-    # Security Score
+    # Security Score (appropriate for workload risk)
     sec_score = 100
-    if not any("vault" in nid or "keyvault" in nid for nid in node_ids_lower):
-        sec_score -= 20
-    if not any("waf" in nid or "armor" in lbl for nid in node_ids_lower for lbl in node_labels_lower):
-        sec_score -= 10
-    if not any("pe-" in nid for nid in node_ids_lower):
-        sec_score -= 15
-    if not any("nsg" in nid for nid in node_ids_lower):
-        sec_score -= 10
-    if not any("ddos" in nid for nid in node_ids_lower):
-        sec_score -= 5
+    if requires_advanced_security:
+        if not has_vault:
+            sec_score -= 25
+        if not has_pe:
+            sec_score -= 25
+        if not has_nsgs:
+            sec_score -= 25
+        if not has_rt:
+            sec_score -= 25
+    else:
+        if "secrets_management" in required_caps and not has_vault:
+            sec_score -= 50
+        if "secure_connectivity" in required_caps and not has_pe:
+            sec_score -= 50
     sec_score = max(0, sec_score)
     
-    # Reliability Score
+    # Reliability Score (availability & recovery)
     rel_score = 100
-    if not any("replica" in nid or "standby" in nid for nid in node_ids_lower):
-        rel_score -= 20
-    if not any("backup" in nid or "recovery" in nid for nid in node_ids_lower):
-        rel_score -= 15
-    db_nodes = [n for n in nodes if n.get("type") == "DatabaseNode"]
-    if len(db_nodes) < 2:
-        rel_score -= 15
+    if requires_backup_dr:
+        if not has_backup:
+            rel_score -= 50
+        # If DB exists, it should have replicas
+        has_replica = any("replica" in nid or "standby" in nid or "replica" in lbl for nid in node_ids_lower for lbl in node_labels_lower)
+        db_nodes = [n for n in nodes if n.get("type") == "DatabaseNode"]
+        if has_db and (not has_replica or len(db_nodes) < 2):
+            rel_score -= 50
+    else:
+        if "disaster_recovery" in required_caps and not has_backup:
+            rel_score -= 50
     rel_score = max(0, rel_score)
     
     # Scalability Score
     scal_score = 100
-    if not any("hpa" in nid or "autoscaler" in lbl or "autoscale" in lbl for nid in node_ids_lower for lbl in node_labels_lower):
-        scal_score -= 20
-    if not any(x in nid or "loadbalancer" in lbl or "lb" in lbl or "gateway" in lbl or "alb" in lbl for nid in node_ids_lower for lbl in node_labels_lower for x in ["app-gateway", "appgw", "alb", "ingress-controller"]):
-        scal_score -= 25
-    if not any("redis" in nid or "cache" in nid for nid in node_ids_lower):
-        scal_score -= 15
+    users_scale = str(get_req_val("expected_users") or get_req_val("expectedUsers") or "").lower()
+    is_high_scale = "100k" in users_scale or "1m" in users_scale or "high" in users_scale or "caching" in required_caps or "global_distribution" in required_caps
+    
+    has_hpa = any("hpa" in nid or "autoscaler" in lbl or "autoscale" in lbl for nid in node_ids_lower for lbl in node_labels_lower)
+    has_lb = any(x in nid or "loadbalancer" in lbl or "lb" in lbl or "gateway" in lbl or "alb" in lbl for nid in node_ids_lower for lbl in node_labels_lower for x in ["app-gateway", "appgw", "alb", "ingress-controller"])
+    
+    if is_high_scale:
+        if "caching" in required_caps and not has_cache:
+            scal_score -= 30
+        if not has_hpa:
+            scal_score -= 35
+        if not has_lb:
+            scal_score -= 35
+    else:
+        if "caching" in required_caps and not has_cache:
+            scal_score -= 50
     scal_score = max(0, scal_score)
 
-    # Cost Efficiency Score
+    # Cost Efficiency Score (budget alignment & overengineering checks)
     total_cost = sum(compute_node_cost(n) for n in nodes)
     cost_score = 100
-    if total_cost > 2000:
-        cost_score -= 15
-    if total_cost > 5000:
-        cost_score -= 15
-    if len(nodes) > 60:
-        cost_score -= 10  # potential overengineering
+    
+    budget_limit = None
+    budget_val = get_req_val("monthly_budget") or get_req_val("monthlyBudget")
+    if budget_val:
+        match_digits = re.findall(r'\d+', str(budget_val).replace(",", ""))
+        if match_digits:
+            try:
+                budget_limit = float(match_digits[0])
+            except ValueError:
+                pass
+                
+    if budget_limit and budget_limit > 0:
+        if total_cost > budget_limit:
+            pct_over = ((total_cost - budget_limit) / budget_limit) * 100
+            cost_score -= min(60, int(pct_over / 2))
+    else:
+        # Default budget thresholds
+        if total_cost > 2000:
+            cost_score -= 20
+        if total_cost > 5000:
+            cost_score -= 20
+            
+    if not requires_advanced_security and total_cost > 800:
+        cost_score -= 20
+    if len(nodes) > 40:
+        cost_score -= 10
+        
     cost_score = max(0, cost_score)
     
     # Terraform Alignment Score
@@ -1511,7 +1534,7 @@ def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[st
     tf_score -= len(tf_drift_warnings) * 15
     tf_score = max(0, tf_score)
     
-    # Architecture Score (weighted average, with 30% weight on requirement coverage)
+    # Weighted average architecture score
     arch_score = int(
         req_cov_score * 0.30 +
         sec_score * 0.20 +
@@ -1608,105 +1631,165 @@ def heal_topology_gates(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
     # 1. Ensure VNet/Subnets exist
     nodes = ensure_container_nodes(nodes, provider, requirements)
     node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
+
+    # Assess Workload Risk & Capabilities
+    def get_req_val(key, default=None):
+        if not requirements:
+            return default
+        if isinstance(requirements, dict):
+            return requirements.get(key, default)
+        return getattr(requirements, key, default)
+
+    app_desc = str(get_req_val("app_description", "") or get_req_val("appDescription", "")).lower()
+    app_type = str(get_req_val("application_type", "") or get_req_val("applicationType", "")).lower()
+    workload_profile = str(get_req_val("workload_profile", "")).lower()
+
+    compliance_str = str(get_req_val("security_level", "") or get_req_val("compliance_standards", "")).lower()
+    sensitivity_str = str(get_req_val("security_level", "") or get_req_val("data_sensitivity", "")).lower()
+    availability_target = str(get_req_val("availability_target", "") or get_req_val("availability_requirements", "")).lower()
+    budget_str = str(get_req_val("monthly_budget", "")).lower()
     
-    # 2. Ensure Route Tables and NSGs exist for every subnet (discovered dynamically, restricted to the 5 real subnets)
-    REAL_SUBNET_IDS = {"subnet-ingress", "subnet-mgmt", "subnet-app", "subnet-data", "subnet-pe"}
-    subnet_nodes = [
-        n for n in nodes
-        if str(n.get("id", "")).lower() in REAL_SUBNET_IDS
-    ]
+    has_pci_or_sensitive = any(c in compliance_str or c in sensitivity_str for c in ["pci", "hipaa", "gdpr", "soc2", "iso27001", "high", "critical"])
+    is_enterprise = any(b in budget_str for b in ["enterprise", "unlimited", "5000", "50000"])
+    is_mission_critical = any(a in availability_target for a in ["high availability", "mission critical"])
     
-    for sub_node in subnet_nodes:
-        sub_node_id = sub_node.get("id")
-        sub_node_id_lower = str(sub_node_id).lower()
+    requires_advanced_security = has_pci_or_sensitive or is_enterprise
+    requires_backup_dr = is_mission_critical or any(s in sensitivity_str for s in ["high", "critical"])
+
+    capabilities_raw = get_req_val("required_capabilities")
+    required_caps = []
+    if isinstance(capabilities_raw, list):
+        required_caps = [str(c).lower().strip() for c in capabilities_raw]
+
+    if not required_caps:
+        if "upload" in app_desc or "file" in app_desc or "document" in app_desc or "model storage" in app_desc:
+            required_caps.append("object_storage")
+        if "caching" in app_desc or "redis" in app_desc or "cache" in app_desc or "100k" in app_desc or "10k" in app_desc:
+            required_caps.append("caching")
+        if "secret" in app_desc or "vault" in app_desc or "credential" in app_desc or "password" in app_desc or requires_advanced_security:
+            required_caps.append("secrets_management")
+        if requires_backup_dr or "backup" in app_desc or "recovery" in app_desc:
+            required_caps.append("disaster_recovery")
+        if requires_advanced_security or "private connect" in app_desc or "private endpoint" in app_desc:
+            required_caps.append("secure_connectivity")
+        if "ai" in app_desc or "gpu" in app_desc or "inference" in app_desc or "ml" in app_desc:
+            required_caps.append("gpu_compute")
+        if "notification" in app_desc or "message" in app_desc or "event" in app_desc or "queue" in app_desc:
+            required_caps.append("messaging")
+        if "global" in app_desc or "cdn" in app_desc or "traffic manager" in app_desc or "cloudfront" in app_desc:
+            required_caps.append("global_distribution")
+
+    # 2. Conditionally Ensure Route Tables and NSGs exist for subnets (ONLY if requires_advanced_security is true)
+    if requires_advanced_security:
+        REAL_SUBNET_IDS = {"subnet-ingress", "subnet-mgmt", "subnet-app", "subnet-data", "subnet-pe"}
+        subnet_nodes = [
+            n for n in nodes
+            if str(n.get("id", "")).lower() in REAL_SUBNET_IDS
+        ]
         
-        # Determine clean prefix/suffix for nsg and rt naming
-        if sub_node_id_lower.startswith("subnet-"):
-            sub_name = sub_node_id[7:]
-        elif sub_node_id_lower.startswith("subnet_"):
-            sub_name = sub_node_id[7:]
-        else:
-            sub_name = sub_node_id
+        for sub_node in subnet_nodes:
+            sub_node_id = sub_node.get("id")
+            sub_node_id_lower = str(sub_node_id).lower()
             
-        # Check NSG in this subnet
-        has_nsg = any(
-            (parent == sub_node_id_lower and ("nsg" in nid or "nsg" in node_labels.get(nid, "")))
-            for nid, parent in [(str(n.get("id")).lower(), str(n.get("parentNode", "")).lower()) for n in nodes]
+            # Determine clean prefix/suffix for nsg and rt naming
+            if sub_node_id_lower.startswith("subnet-"):
+                sub_name = sub_node_id[7:]
+            elif sub_node_id_lower.startswith("subnet_"):
+                sub_name = sub_node_id[7:]
+            else:
+                sub_name = sub_node_id
+                
+            # Check NSG in this subnet
+            has_nsg = any(
+                (parent == sub_node_id_lower and ("nsg" in nid or "nsg" in node_labels.get(nid, "")))
+                for nid, parent in [(str(n.get("id")).lower(), str(n.get("parentNode", "")).lower()) for n in nodes]
+            )
+            if not has_nsg:
+                nsg_id = f"nsg-{sub_name}"
+                if nsg_id.lower() not in node_ids:
+                    nodes.append({
+                        "id": nsg_id,
+                        "type": "SecurityNode",
+                        "parentNode": sub_node_id,
+                        "position": {"x": 30.0, "y": 60.0},
+                        "data": {"label": f"Security Group ({sub_name.upper()})", "subnet": sub_node_id, "provider": provider}
+                    })
+                
+            # Check RT in this subnet
+            has_rt = any(
+                (parent == sub_node_id_lower and ("rt-" in nid or "-rt" in nid or "route table" in node_labels.get(nid, "") or "route-table" in node_labels.get(nid, "")))
+                for nid, parent in [(str(n.get("id")).lower(), str(n.get("parentNode", "")).lower()) for n in nodes]
+            )
+            if not has_rt:
+                rt_id = f"rt-{sub_name}"
+                if rt_id.lower() not in node_ids:
+                    nodes.append({
+                        "id": rt_id,
+                        "type": "SecurityNode",
+                        "parentNode": sub_node_id,
+                        "position": {"x": 200.0, "y": 60.0},
+                        "data": {"label": f"Route Table ({sub_name.upper()})", "subnet": sub_node_id, "provider": provider}
+                    })
+                
+        # Update node collections after NSG/RT injections
+        node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
+        node_labels = {str(n.get("id")).lower(): str(n.get("data", {}).get("label", "")).lower() for n in nodes}
+        node_types = {str(n.get("id")).lower(): str(n.get("type", "")) for n in nodes}
+
+    # 3. Ensure Key Vault exists if required by capabilities
+    if "secrets_management" in required_caps or requires_advanced_security:
+        has_kv = any(
+            t == "SecurityNode" and any(x in nid or x in node_labels.get(nid, "") for x in ["vault", "keyvault", "secret"])
+            for nid, t in node_types.items()
         )
-        if not has_nsg:
-            nsg_id = f"nsg-{sub_name}"
-            if nsg_id.lower() not in node_ids:
-                nodes.append({
-                    "id": nsg_id,
-                    "type": "SecurityNode",
-                    "parentNode": sub_node_id,
-                    "position": {"x": 30.0, "y": 60.0},
-                    "data": {"label": f"Security Group ({sub_name.upper()})", "subnet": sub_node_id, "provider": provider}
-                })
+        if not has_kv:
+            nodes.append({
+                "id": "keyvault",
+                "type": "SecurityNode",
+                "parentNode": "shared-services-group",
+                "position": {"x": 50.0, "y": 60.0},
+                "data": {"label": "Key Vault (Secrets)", "provider": provider}
+            })
+            node_ids.add("keyvault")
+            node_labels["keyvault"] = "key vault (secrets)"
+            node_types["keyvault"] = "SecurityNode"
             
-        # Check RT in this subnet
-        has_rt = any(
-            (parent == sub_node_id_lower and ("rt-" in nid or "-rt" in nid or "route table" in node_labels.get(nid, "") or "route-table" in node_labels.get(nid, "")))
-            for nid, parent in [(str(n.get("id")).lower(), str(n.get("parentNode", "")).lower()) for n in nodes]
+    # 4. Ensure Monitoring Node exists conditionally
+    if requires_advanced_security or requires_backup_dr or "monitoring" in required_caps or any(t == "monitoringnode" for t in node_types.values()):
+        has_mon = any(
+            t == "MonitoringNode" or any(x in nid or x in node_labels.get(nid, "") for x in ["monitor", "insights", "analytics"])
+            for nid, t in node_types.items()
         )
-        if not has_rt:
-            rt_id = f"rt-{sub_name}"
-            if rt_id.lower() not in node_ids:
-                nodes.append({
-                    "id": rt_id,
-                    "type": "SecurityNode",
-                    "parentNode": sub_node_id,
-                    "position": {"x": 200.0, "y": 60.0},
-                    "data": {"label": f"Route Table ({sub_name.upper()})", "subnet": sub_node_id, "provider": provider}
-                })
+        if not has_mon:
+            nodes.append({
+                "id": "log-analytics",
+                "type": "MonitoringNode",
+                "parentNode": "shared-services-group",
+                "position": {"x": 50.0, "y": 160.0},
+                "data": {"label": "Log Analytics Workspace", "provider": provider}
+            })
+            node_ids.add("log-analytics")
+            node_labels["log-analytics"] = "log analytics workspace"
+            node_types["log-analytics"] = "MonitoringNode"
             
-    # Update node collections after NSG/RT injections
-    node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
-    node_labels = {str(n.get("id")).lower(): str(n.get("data", {}).get("label", "")).lower() for n in nodes}
-    node_types = {str(n.get("id")).lower(): str(n.get("type", "")) for n in nodes}
-    
-    # 3. Ensure Key Vault exists
-    has_kv = any(
-        t == "SecurityNode" and any(x in nid or x in node_labels.get(nid, "") for x in ["vault", "keyvault", "secret"])
-        for nid, t in node_types.items()
-    )
-    if not has_kv:
-        nodes.append({
-            "id": "keyvault",
-            "type": "SecurityNode",
-            "parentNode": "shared-services-group",
-            "position": {"x": 50.0, "y": 60.0},
-            "data": {"label": "Key Vault (Secrets)", "provider": provider}
-        })
-        
-    # 4. Ensure Monitoring Node exists
-    has_mon = any(
-        t == "MonitoringNode" or any(x in nid or x in node_labels.get(nid, "") for x in ["monitor", "insights", "analytics"])
-        for nid, t in node_types.items()
-    )
-    if not has_mon:
-        nodes.append({
-            "id": "log-analytics",
-            "type": "MonitoringNode",
-            "parentNode": "shared-services-group",
-            "position": {"x": 50.0, "y": 160.0},
-            "data": {"label": "Log Analytics Workspace", "provider": provider}
-        })
-        
-    # 5. Ensure Backup Vault exists
-    has_backup = any(
-        any(x in nid or x in node_labels.get(nid, "") for x in ["backup", "recovery", "vault"]) and "key" not in nid
-        for nid in node_ids
-    )
-    if not has_backup:
-        nodes.append({
-            "id": "backup-vault",
-            "type": "StorageNode",
-            "parentNode": "shared-services-group",
-            "position": {"x": 50.0, "y": 660.0},
-            "data": {"label": "Backup Vault (Recovery)", "provider": provider}
-        })
-        
+    # 5. Ensure Backup Vault exists if required
+    if "disaster_recovery" in required_caps or requires_backup_dr:
+        has_backup = any(
+            any(x in nid for x in ["backup", "recovery", "vault"]) and "key" not in nid
+            for nid in node_ids
+        )
+        if not has_backup:
+            nodes.append({
+                "id": "backup-vault",
+                "type": "StorageNode",
+                "parentNode": "shared-services-group",
+                "position": {"x": 50.0, "y": 660.0},
+                "data": {"label": "Backup Vault (Recovery)", "provider": provider}
+            })
+            node_ids.add("backup-vault")
+            node_labels["backup-vault"] = "backup vault (recovery)"
+            node_types["backup-vault"] = "StorageNode"
+            
     # 5b. Ensure WAF Policy exists if referenced in edges
     has_waf = any(
         t == "SecurityNode" and any(x in nid or x in node_labels.get(nid, "") for x in ["waf", "waf-policy", "waf_policy"])
@@ -1727,213 +1810,76 @@ def heal_topology_gates(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
             node_labels["waf-policy"] = "waf policy"
             node_types["waf-policy"] = "SecurityNode"
 
-    # 6. Ensure Private Endpoints exist and are in subnet-pe
-    has_pe = any(
-        "pe-" in nid or "pe_" in nid or "private endpoint" in node_labels.get(nid, "")
-        for nid in node_ids
-    )
-    if not has_pe:
-        # Create private endpoints for database and storage if they exist
-        db_nodes = [nid for nid, t in node_types.items() if t == "DatabaseNode"]
-        storage_nodes = [nid for nid, t in node_types.items() if t == "StorageNode" and "backup" not in nid]
-        
-        pe_count = 0
-        if db_nodes:
-            pe_id = "pe-db"
-            nodes.append({
-                "id": pe_id,
-                "type": "SecurityNode",
-                "parentNode": "subnet-pe",
-                "position": {"x": 50.0 + pe_count * 200, "y": 60.0},
-                "data": {"label": "PE Database Connection", "subnet": "subnet-pe", "provider": provider}
-            })
-            edges.append({
-                "id": f"e-pe-db-{db_nodes[0]}",
-                "source": pe_id,
-                "target": db_nodes[0],
-                "animated": False
-            })
-            pe_count += 1
+    # 6. Ensure Private Endpoints exist conditionally
+    if "secure_connectivity" in required_caps or requires_advanced_security:
+        has_pe = any(
+            "pe-" in nid or "pe_" in nid or "private endpoint" in node_labels.get(nid, "")
+            for nid in node_ids
+        )
+        if not has_pe:
+            # Create private endpoints for database and storage if they exist
+            db_nodes = [nid for nid, t in node_types.items() if t == "DatabaseNode"]
+            storage_nodes = [nid for nid, t in node_types.items() if t == "StorageNode" and "backup" not in nid]
             
-        if storage_nodes:
-            pe_id = "pe-storage"
-            nodes.append({
-                "id": pe_id,
-                "type": "SecurityNode",
-                "parentNode": "subnet-pe",
-                "position": {"x": 50.0 + pe_count * 200, "y": 60.0},
-                "data": {"label": "PE Storage Connection", "subnet": "subnet-pe", "provider": provider}
-            })
-            edges.append({
-                "id": f"e-pe-storage-{storage_nodes[0]}",
-                "source": pe_id,
-                "target": storage_nodes[0],
-                "animated": False
-            })
-            pe_count += 1
-            
-        if not pe_count:
-            # Inject a fallback PE to make sure subnet-pe is not empty
-            pe_id = "pe-fallback"
-            nodes.append({
-                "id": pe_id,
-                "type": "SecurityNode",
-                "parentNode": "subnet-pe",
-                "position": {"x": 50.0, "y": 60.0},
-                "data": {"label": "Private Endpoint Connection", "subnet": "subnet-pe", "provider": provider}
-            })
-            
-    # 7. Ensure at least 5 microservices exist (if missing, inject them)
-    microservices = [n for n in nodes if str(n.get("id", "")).lower().startswith("svc-")]
-    if len(microservices) < 5:
-        # Inject standard services to reach 5
-        standard_svcs = ["svc-auth", "svc-cart", "svc-catalog", "svc-order", "svc-payment"]
-        injected_count = len(microservices)
-        for svc_name in standard_svcs:
-            if injected_count >= 5:
-                break
-            if not any(str(m.get("id")).lower() == svc_name for m in microservices):
+            pe_count = 0
+            if db_nodes:
+                pe_id = "pe-db"
                 nodes.append({
-                    "id": svc_name,
-                    "type": "BackendNode",
-                    "parentNode": "subnet-app",
-                    "position": {"x": 100.0 + injected_count * 250, "y": 60.0},
-                    "data": {"label": f"{svc_name.replace('svc-', '').capitalize()} Service", "subnet": "subnet-app", "provider": provider}
+                    "id": pe_id,
+                    "type": "SecurityNode",
+                    "parentNode": "subnet-pe",
+                    "position": {"x": 50.0 + pe_count * 200, "y": 60.0},
+                    "data": {"label": "PE Database Connection", "subnet": "subnet-pe", "provider": provider}
                 })
-                injected_count += 1
+                edges.append({
+                    "id": f"e-pe-db-{db_nodes[0]}",
+                    "source": pe_id,
+                    "target": db_nodes[0],
+                    "animated": False
+                })
+                pe_count += 1
+                node_ids.add(pe_id)
+                node_labels[pe_id] = "pe database connection"
+                node_types[pe_id] = "SecurityNode"
                 
-    # Update node IDs again
+            if storage_nodes:
+                pe_id = "pe-storage"
+                nodes.append({
+                    "id": pe_id,
+                    "type": "SecurityNode",
+                    "parentNode": "subnet-pe",
+                    "position": {"x": 50.0 + pe_count * 200, "y": 60.0},
+                    "data": {"label": "PE Storage Connection", "subnet": "subnet-pe", "provider": provider}
+                })
+                edges.append({
+                    "id": f"e-pe-storage-{storage_nodes[0]}",
+                    "source": pe_id,
+                    "target": storage_nodes[0],
+                    "animated": False
+                })
+                pe_count += 1
+                node_ids.add(pe_id)
+                node_labels[pe_id] = "pe storage connection"
+                node_types[pe_id] = "SecurityNode"
+                
+            if not pe_count:
+                # Inject a fallback PE to make sure subnet-pe is not empty
+                pe_id = "pe-fallback"
+                nodes.append({
+                    "id": pe_id,
+                    "type": "SecurityNode",
+                    "parentNode": "subnet-pe",
+                    "position": {"x": 50.0, "y": 60.0},
+                    "data": {"label": "Private Endpoint Connection", "subnet": "subnet-pe", "provider": provider}
+                })
+                node_ids.add(pe_id)
+                node_labels[pe_id] = "private endpoint connection"
+                node_types[pe_id] = "SecurityNode"
+
+    # Clean up orphan edges
     node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
-    
-    # 8. Clean up orphan edges and ensure we have at least 35 edges
     edges = [e for e in edges if str(e.get("source")).lower() in node_ids and str(e.get("target")).lower() in node_ids]
-    
-    # Ensure edge count is at least 35 by generating connections
-    if len(edges) < 35:
-        # Build logical connections between existing resources
-        existing_edge_keys = {
-            (str(e.get("source")).lower(), str(e.get("target")).lower())
-            for e in edges if e.get("source") and e.get("target")
-        }
-        
-        # Identify key nodes for connection
-        microservice_ids = [str(n.get("id")).lower() for n in nodes if str(n.get("id")).lower().startswith("svc-")]
-        gateway_ids = [str(n.get("id")).lower() for n in nodes if n.get("type") == "GatewayNode"]
-        db_ids = [str(n.get("id")).lower() for n in nodes if n.get("type") == "DatabaseNode"]
-        cache_ids = [str(n.get("id")).lower() for n in nodes if n.get("type") == "CacheNode"]
-        
-        # Direct gateway -> microservices
-        for gw in gateway_ids:
-            for svc in microservice_ids:
-                if len(edges) >= 35:
-                    break
-                if (gw, svc) not in existing_edge_keys and (svc, gw) not in existing_edge_keys:
-                    edges.append({
-                        "id": f"e-{gw}-{svc}",
-                        "source": gw,
-                        "target": svc,
-                        "animated": True
-                    })
-                    existing_edge_keys.add((gw, svc))
-                    
-        # Microservices -> DB / Cache
-        for svc in microservice_ids:
-            for db in db_ids:
-                if len(edges) >= 35:
-                    break
-                if (svc, db) not in existing_edge_keys and (db, svc) not in existing_edge_keys:
-                    edges.append({
-                        "id": f"e-{svc}-{db}",
-                        "source": svc,
-                        "target": db,
-                        "animated": False
-                    })
-                    existing_edge_keys.add((svc, db))
-                    
-            for cache in cache_ids:
-                if len(edges) >= 35:
-                    break
-                if (svc, cache) not in existing_edge_keys and (cache, svc) not in existing_edge_keys:
-                    edges.append({
-                        "id": f"e-{svc}-{cache}",
-                        "source": svc,
-                        "target": cache,
-                        "animated": False
-                    })
-                    existing_edge_keys.add((svc, cache))
-                    
-        # Associate NSGs with subnets based on parentNode
-        nsg_nodes = [n for n in nodes if "nsg" in str(n.get("id")).lower() or "nsg" in str(n.get("data", {}).get("label", "")).lower()]
-        for nsg in nsg_nodes:
-            nsg_id = str(nsg.get("id")).lower()
-            parent = nsg.get("parentNode")
-            if parent:
-                parent_id = str(parent).lower()
-                if parent_id in node_ids:
-                    if len(edges) >= 35:
-                        break
-                    if (nsg_id, parent_id) not in existing_edge_keys and (parent_id, nsg_id) not in existing_edge_keys:
-                        edges.append({
-                            "id": f"e-{nsg_id}-{parent_id}",
-                            "source": nsg_id,
-                            "target": parent_id,
-                            "animated": False
-                        })
-                        existing_edge_keys.add((nsg_id, parent_id))
-                        
-        # Associate Route Tables with subnets based on parentNode
-        rt_nodes = [n for n in nodes if "rt-" in str(n.get("id")).lower() or "-rt" in str(n.get("id")).lower() or "route table" in str(n.get("data", {}).get("label", "")).lower() or "route-table" in str(n.get("data", {}).get("label", "")).lower()]
-        for rt in rt_nodes:
-            rt_id = str(rt.get("id")).lower()
-            parent = rt.get("parentNode")
-            if parent:
-                parent_id = str(parent).lower()
-                if parent_id in node_ids:
-                    if len(edges) >= 35:
-                        break
-                    if (rt_id, parent_id) not in existing_edge_keys and (parent_id, rt_id) not in existing_edge_keys:
-                        edges.append({
-                            "id": f"e-{rt_id}-{parent_id}",
-                            "source": rt_id,
-                            "target": parent_id,
-                            "animated": False
-                        })
-                        existing_edge_keys.add((rt_id, parent_id))
-                    
-        # Connect microservices to Key Vault
-        kv_nodes = [str(n.get("id")).lower() for n in nodes if "keyvault" in str(n.get("id")).lower() or "vault" in str(n.get("id")).lower()]
-        for kv in kv_nodes:
-            for svc in microservice_ids:
-                if len(edges) >= 35:
-                    break
-                if (svc, kv) not in existing_edge_keys and (kv, svc) not in existing_edge_keys:
-                    edges.append({
-                        "id": f"e-{svc}-{kv}",
-                        "source": svc,
-                        "target": kv,
-                        "animated": False
-                    })
-                    existing_edge_keys.add((svc, kv))
-                    
-        # Fallback interconnects if still below 35
-        if len(edges) < 35:
-            all_list = list(node_ids)
-            for i in range(len(all_list)):
-                for j in range(i+1, len(all_list)):
-                    if len(edges) >= 35:
-                        break
-                    src, tgt = all_list[i], all_list[j]
-                    if "group" in src or "group" in tgt or "subnet-" in src or "subnet-" in tgt:
-                        continue
-                    if (src, tgt) not in existing_edge_keys and (tgt, src) not in existing_edge_keys:
-                        edges.append({
-                            "id": f"e-{src}-{tgt}",
-                            "source": src,
-                            "target": tgt,
-                            "animated": False
-                        })
-                        existing_edge_keys.add((src, tgt))
-                        
+
     return nodes, edges
 
 

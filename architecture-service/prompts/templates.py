@@ -17,8 +17,16 @@ You MUST extract and preserve all user choices exactly as provided. Specifically
 - "rto": Recovery Time Objective.
 - "rpo": Recovery Point Objective.
 
-You must analyze the application description to identify required microservices, caching needs, security needs, and compliance standards.
-Additionally, classify the workload profile and extract specific functional, security, compliance, scalability, availability, and integration requirements.
+You must analyze the application description to identify required capabilities, caching needs, security needs, and compliance standards.
+Specifically, map the requirements to a list of required capabilities from the following set:
+- "object_storage" (requires storage node e.g. Blob/S3 for file uploads)
+- "caching" (requires cache node e.g. Redis for high concurrent users or load)
+- "secrets_management" (requires key vault/secrets manager to encrypt keys/credentials)
+- "disaster_recovery" (requires backup and recovery vault resources)
+- "secure_connectivity" (requires private endpoint connections and network isolation)
+- "gpu_compute" (requires GPU-capable compute resources for AI/ML workloads)
+- "messaging" (requires queue/event/pubsub service for real-time notifications or eventing)
+- "global_distribution" (requires CDN / global load balancer for global reach)
 
 Your output MUST be a valid JSON object matching the following structure:
 {
@@ -36,7 +44,7 @@ Your output MUST be a valid JSON object matching the following structure:
   "rpo": "string",
   "microservices": ["string"],
   "caching_required": true,
-  "workload_profile": "string (SaaS | E-Commerce | Streaming | Banking | AI | General)",
+  "required_capabilities": ["string"],
   "functional_requirements": ["string"],
   "security_requirements": ["string"],
   "compliance_standards": ["string"],
@@ -61,7 +69,9 @@ Analyze the requirements and determine:
 6. The exact Terraform resource type for each resource (e.g. azurerm_kubernetes_cluster for AKS, azurerm_postgresql_flexible_server for Postgres).
 
 Strictly follow these rules:
-- You MUST strictly use the user's selected Compute platform (e.g. AKS, App Service, Container Apps) and Database type specified in the analyzed requirements. Do NOT substitute them or default to something else (e.g., if database is CosmosDB, you MUST plan for CosmosDB/DynamoDB/Firestore and NOT PostgreSQL/MySQL).
+- You MUST strictly satisfy the user's "required_capabilities" (e.g., plan a storage node for 'object_storage', a Redis cache for 'caching', a secrets vault for 'secrets_management', backup resources for 'disaster_recovery', private endpoints for 'secure_connectivity', and GPU-capable nodes for 'gpu_compute').
+- Network security groups, route tables, private endpoints, and backup vaults should be planned only if compliance, sensitivity, availability, or capabilities justify them. Avoid overengineering basic startups.
+- You MUST strictly use the user's selected Compute platform (e.g. AKS, App Service, Container Apps) and Database type specified in the analyzed requirements. Do NOT substitute them or default to something else.
 - Do NOT use hardcoded microservice templates. Tailor the microservices list exactly to the application description.
 - Do NOT assume a fixed list of subnets. Determine the subnets dynamically based on requirements.
 - Map every resource to its respective cloud provider and Terraform resource type.
