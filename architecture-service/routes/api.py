@@ -709,6 +709,26 @@ def normalize_and_validate_ai_topology(nodes: List[Dict[str, Any]], edges: List[
     prov_lower = provider.lower()
     node_ids = {str(n.get("id")) for n in nodes if n.get("id")}
     
+    # Extract VNet CIDR to align subnets
+    vnet_cidr_val = "10.0.0.0/16"
+    if requirements:
+        vnet_cidr_val = getattr(requirements, "vnetCIDR", None) or getattr(requirements, "vnet_cidr", None) or "10.0.0.0/16"
+    
+    for n in nodes:
+        nid_l = str(n.get("id", "")).lower()
+        ntype = str(n.get("type", ""))
+        if ntype == "VNetGroupNode" or "vnet" in nid_l or "vpc" in nid_l:
+            lbl = str(n.get("data", {}).get("label", ""))
+            match_ip = re.search(r"(\d+\.\d+\.\d+\.\d+/\d+)", lbl)
+            if match_ip:
+                vnet_cidr_val = match_ip.group(1)
+                break
+                
+    ip_prefix = "10.0"
+    match_cidr = re.match(r"^(\d+\.\d+)", vnet_cidr_val)
+    if match_cidr:
+        ip_prefix = match_cidr.group(1)
+        
     for idx, node in enumerate(nodes):
         node['data'] = node.get('data') or {}
         n_id = str(node.get("id", ""))
@@ -742,6 +762,29 @@ def normalize_and_validate_ai_topology(nodes: List[Dict[str, Any]], edges: List[
             
             node["type"] = mapped_type
             n_type = mapped_type
+
+        # Align VNet and Subnet CIDR prefixes to guarantee consistency
+        if n_type == "VNetGroupNode" or "vnet" in n_id_lower or "vpc" in n_id_lower:
+            node["data"] = node.get("data") or {}
+            node["data"]["label"] = f"Virtual Network (VPC): {vnet_cidr_val}"
+        elif n_type == "SubnetGroupNode" or "subnet" in n_id_lower or "snet" in n_id_lower:
+            node["data"] = node.get("data") or {}
+            lbl = str(node["data"].get("label", "")).lower()
+            if "ingress" in n_id_lower or "ingress" in lbl:
+                node["data"]["label"] = f"Ingress Subnet ({ip_prefix}.1.0/24)"
+            elif "mgmt" in n_id_lower or "mgmt" in lbl or "management" in lbl:
+                node["data"]["label"] = f"Management Subnet ({ip_prefix}.4.0/24)"
+            elif "pe" in n_id_lower or "pe" in lbl or "private endpoint" in lbl or "private-endpoint" in lbl:
+                node["data"]["label"] = f"Private Endpoint Subnet ({ip_prefix}.5.0/24)"
+            elif "app" in n_id_lower or "app" in lbl or "application" in lbl:
+                node["data"]["label"] = f"Application Subnet ({ip_prefix}.2.0/24)"
+            elif "data" in n_id_lower or "data" in lbl or "database" in lbl:
+                node["data"]["label"] = f"Data Subnet ({ip_prefix}.3.0/24)"
+            else:
+                label = str(node["data"].get("label", ""))
+                match_sub_ip = re.search(r"(\d+\.\d+)\.(\d+\.\d+/\d+)", label)
+                if match_sub_ip:
+                    node["data"]["label"] = label.replace(match_sub_ip.group(1), ip_prefix)
 
         # Enforce Route Tables, NSGs, WAF policies, and Firewalls to be SecurityNode
         if "rt-" in n_id or "route table" in lbl_lower or "route-table" in lbl_lower:
