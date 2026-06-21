@@ -65,31 +65,36 @@ infrastructure/terraform/
 
 ---
 
-## 4. Helm Chart Structure
+## 4. Kubernetes (Helm) Chart Structure
 
-Each microservice is versioned and deployed using its own dedicated Helm chart under `infrastructure/helm/`:
+Each microservice is versioned and deployed using its own dedicated Helm chart under `infrastructure/k8s/`:
 
 ```
-infrastructure/helm/
+infrastructure/k8s/
 ├── frontend/                   # Frontend SPA UI Chart (AGIC Ingress, HPA, ClusterIP)
 │   ├── Chart.yaml
-│   ├── values.yaml
+│   ├── values-dev.yaml         # Dev environment overrides
+│   ├── values-prod.yaml        # Prod environment overrides
 │   └── templates/ (deployment.yaml, service.yaml, ingress.yaml, hpa.yaml)
 ├── api-gateway/                # API Gateway Ingress Routing Chart
 │   ├── Chart.yaml
-│   ├── values.yaml
+│   ├── values-dev.yaml
+│   ├── values-prod.yaml
 │   └── templates/
 ├── auth-service/               # Auth Microservice (Key Vault CSI Secrets mounted, Workload Identity)
 │   ├── Chart.yaml
-│   ├── values.yaml
+│   ├── values-dev.yaml
+│   ├── values-prod.yaml
 │   └── templates/ (deployment.yaml, service.yaml, serviceaccount.yaml, secrets-provider.yaml, hpa.yaml)
 ├── project-service/            # Project Metadata Service (Cosmos DB secrets provider, Workload Identity)
 │   ├── Chart.yaml
-│   ├── values.yaml
+│   ├── values-dev.yaml
+│   ├── values-prod.yaml
 │   └── templates/
 └── architecture-service/       # Agent Engine (LLM API keys mounted, autoscaling user pool)
     ├── Chart.yaml
-    ├── values.yaml
+    ├── values-dev.yaml
+    ├── values-prod.yaml
     └── templates/
 ```
 
