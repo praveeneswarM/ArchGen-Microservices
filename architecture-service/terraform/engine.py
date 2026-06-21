@@ -76,12 +76,21 @@ class TerraformEngine:
                 warnings.append("Terraform Drift: Container Apps compute selected but azurerm_container_app_environment not found in HCL.")
         
         # 4. Validate subnet resource existence
-        subnet_names = ["subnet-ingress", "subnet-app", "subnet-data", "subnet-mgmt", "subnet-pe"]
-        for sub in subnet_names:
-            sanitized = re.sub(r'[^a-z0-9]', '', sub.lower())
-            check_id = sanitized[:6] + sanitized[-4:] if len(sanitized) > 10 else sanitized
-            if check_id not in tf_resource_names and sub.replace("-", "") not in tf_resource_names:
-                warnings.append(f"Terraform Drift: Subnet '{sub}' not found in rendered HCL resources.")
+        arch_subnets = [n for n in nodes if n.get("type") == "SubnetGroupNode" or str(n.get("id")).startswith("subnet-") or str(n.get("id")).startswith("snet-")]
+        if arch_subnets:
+            for sub_node in arch_subnets:
+                sub = sub_node.get("id")
+                sanitized = re.sub(r'[^a-z0-9]', '', sub.lower())
+                check_id = sanitized[:6] + sanitized[-4:] if len(sanitized) > 10 else sanitized
+                if check_id not in tf_resource_names and sub.replace("-", "") not in tf_resource_names:
+                    warnings.append(f"Terraform Drift: Subnet '{sub}' not found in rendered HCL resources.")
+        else:
+            subnet_names = ["subnet-ingress", "subnet-app", "subnet-data", "subnet-mgmt", "subnet-pe"]
+            for sub in subnet_names:
+                sanitized = re.sub(r'[^a-z0-9]', '', sub.lower())
+                check_id = sanitized[:6] + sanitized[-4:] if len(sanitized) > 10 else sanitized
+                if check_id not in tf_resource_names and sub.replace("-", "") not in tf_resource_names:
+                    warnings.append(f"Terraform Drift: Subnet '{sub}' not found in rendered HCL resources.")
         
         # 5. Check for basic resource count alignment
         tf_resource_count = len(tf_resources)

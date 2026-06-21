@@ -975,15 +975,14 @@ def deduplicate_shared_resources(nodes: List[Dict[str, Any]], edges: List[Dict[s
 
 
 def _count_real_subnets(nodes: List[Dict[str, Any]]) -> int:
-    """Count only the 5 real subnet nodes (ingress, app, data, mgmt, pe)."""
-    REAL_SUBNET_IDS = {"subnet-ingress", "subnet-mgmt", "subnet-app", "subnet-data", "subnet-pe"}
+    """Count subnets dynamically based on node type or ID pattern."""
     return len([
         n for n in nodes
-        if str(n.get("id", "")).lower() in REAL_SUBNET_IDS
+        if str(n.get("type", "")) == "SubnetGroupNode" or "subnet" in str(n.get("id", "")).lower() or "snet" in str(n.get("id", "")).lower()
     ])
 
 
-def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], complexity_warnings: List[str] = None, compute_type: str = None, database_type: str = None) -> List[str]:
+def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], complexity_warnings: List[str] = None, compute_type: str = None, database_type: str = None, provider: str = None) -> List[str]:
     if complexity_warnings is None:
         complexity_warnings = []
     
@@ -996,96 +995,27 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     subnet_count = _count_real_subnets(nodes)
     
     # 1. Quality Gate Checks
-    # Validate node count
-    if len(nodes) < 25:
-        validation_findings.append(f"Quality Gate: Node count {len(nodes)} is less than 25.")
-
-    # Validate edge count
-    if len(edges) < 35:
-        validation_findings.append(f"Quality Gate: Edge count {len(edges)} is less than 35.")
-
-    # Validate microservices >= 5
-    microservices = [n for n in nodes if str(n.get("id", "")).lower().startswith("svc-")]
-    if len(microservices) < 5:
-        validation_findings.append(f"Quality Gate: Microservices count {len(microservices)} is less than 5.")
-
-    # Validate nsg_count == subnet_count
-    nsg_count = len([
-        n for n in nodes 
-        if "nsg" in str(n.get("id")).lower() or "nsg" in str(n.get("data", {}).get("label", "")).lower()
-    ])
-    if nsg_count != subnet_count:
-        validation_findings.append(f"Quality Gate: NSG count ({nsg_count}) does not match subnet count ({subnet_count}).")
-
-    # Validate route_table_count == subnet_count
-    rt_count = len([
-        n for n in nodes 
-        if "rt-" in str(n.get("id")).lower() or "-rt" in str(n.get("id")).lower() or "route table" in str(n.get("data", {}).get("label", "")).lower() or "route-table" in str(n.get("data", {}).get("label", "")).lower()
-    ])
-    if rt_count != subnet_count:
-        validation_findings.append(f"Quality Gate: Route Table count ({rt_count}) does not match subnet count ({subnet_count}).")
+    # Validate dynamic subnets exist
+    if subnet_count == 0:
+        validation_findings.append("Quality Gate: Virtual Network subnets are missing. At least one subnet node (SubnetGroupNode) is required.")
 
     # Validate VNet exists
     has_vnet = "VNetGroupNode" in node_types or any("vnet" in nid.lower() or "vpc" in nid.lower() for nid in node_ids)
     if not has_vnet:
         validation_findings.append("Quality Gate: VNet/VPC group node is missing.")
 
-    # Validate all selected subnets exist (Ingress, App, Data, Mgmt, PE)
-    required_subnets = ["ingress", "app", "data", "mgmt", "pe"]
-    existing_subnets = [nid.lower() for nid in node_ids if "subnet" in nid.lower() or "snet" in nid.lower()]
-    for rs in required_subnets:
-        if not any(rs in es for es in existing_subnets):
-            validation_findings.append(f"Quality Gate: Subnet '{rs}' is missing.")
+    # Validate Compute platform exists
+    has_compute = any(
+        n_type in ["BackendNode", "FrontendNode"] or 
+        any(x in nid.lower() for x in ["cluster", "env", "plan", "aks", "compute"])
+        for nid, n_type in zip(node_ids, node_types)
+    )
+    if not has_compute:
+        validation_findings.append("Quality Gate: Compute engine platform node is missing.")
 
-    # Validate Monitoring exists
-    has_monitoring = any(t == "MonitoringNode" or "monitor" in nid.lower() or "insights" in nid.lower() or "analytics" in nid.lower() for nid, t in zip(node_ids, node_types))
-    if not has_monitoring:
-        validation_findings.append("Quality Gate: Monitoring resources are missing.")
-
-    # Validate Backup exists
-    has_backup = any("backup" in nid.lower() or "recovery" in nid.lower() or "vault" in nid.lower() and "key" not in nid.lower() for nid in node_ids)
-    if not has_backup:
-        validation_findings.append("Quality Gate: Backup Vault/Recovery resources are missing.")
-
-    # Validate Private Endpoints exist
-    has_pe = any("pe-" in nid.lower() or "private endpoint" in lbl or "private-endpoint" in lbl or "pe_" in nid.lower() for nid, lbl in zip(node_ids, node_labels))
-    if not has_pe:
-        validation_findings.append("Quality Gate: Private Endpoint resources are missing.")
-
-    # Validate Security resources exist (e.g. Key Vault)
-    has_security = any(t == "SecurityNode" or "vault" in nid.lower() or "key" in nid.lower() for nid, t in zip(node_ids, node_types))
-    if not has_security:
-        validation_findings.append("Quality Gate: Security vault/secrets resources are missing.")
-
-    # 1a. V3 Gating Enhancements - Singleton Resource Deduplication Checks
-    kv_count = len([n for n in nodes if ("vault" in str(n.get("id")).lower() or "keyvault" in str(n.get("id")).lower() or "key vault" in str(n.get("data", {}).get("label", "")).lower()) and not any(x in str(n.get("id")).lower() for x in ["backup", "recovery", "pe-kv", "pe-"])])
-    if kv_count > 1:
-        validation_findings.append(f"Quality Gate: Duplicate shared Key Vault detected ({kv_count} instances).")
-
-    law_count = len([n for n in nodes if "log-analytics" in str(n.get("id")).lower() or "log analytics" in str(n.get("data", {}).get("label", "")).lower() or "loganalytics" in str(n.get("id")).lower()])
-    if law_count > 1:
-        validation_findings.append(f"Quality Gate: Duplicate shared Log Analytics Workspace detected ({law_count} instances).")
-
-    mon_count = len([n for n in nodes if ("monitor" in str(n.get("id")).lower() or "monitor" in str(n.get("data", {}).get("label", "")).lower()) and not any(x in str(n.get("id")).lower() for x in ["log-analytics", "log analytics", "app-insights", "app insights", "insights", "alerts", "diagnostic"])])
-    if mon_count > 1:
-        validation_findings.append(f"Quality Gate: Duplicate shared Azure Monitor detected ({mon_count} instances).")
-
-    ai_count = len([n for n in nodes if "app-insights" in str(n.get("id")).lower() or "app insights" in str(n.get("data", {}).get("label", "")).lower() or "insights" in str(n.get("id")).lower()])
-    if ai_count > 1:
-        validation_findings.append(f"Quality Gate: Duplicate shared Application Insights detected ({ai_count} instances).")
-
-    bv_count = len([n for n in nodes if "backup-vault" in str(n.get("id")).lower() or "backup vault" in str(n.get("data", {}).get("label", "")).lower()])
-    if bv_count > 1:
-        validation_findings.append(f"Quality Gate: Duplicate shared Backup Vault detected ({bv_count} instances).")
-
-    rv_count = len([n for n in nodes if "recovery-vault" in str(n.get("id")).lower() or "recovery services vault" in str(n.get("data", {}).get("label", "")).lower()])
-    if rv_count > 1:
-        validation_findings.append(f"Quality Gate: Duplicate shared Recovery Services Vault detected ({rv_count} instances).")
-
-    # Fail validation if subnet-pe is empty
-    pe_subnet_nodes = [n for n in nodes if n.get("parentNode") == "subnet-pe"]
-    if len(pe_subnet_nodes) == 0:
-        validation_findings.append("Quality Gate: Private Endpoint Subnet ('subnet-pe') is empty.")
+    # Validate minimal node count (at least VNet, Subnet, and Compute)
+    if len(nodes) < 3:
+        validation_findings.append(f"Quality Gate: Node count {len(nodes)} is too low (expected at least 3 nodes).")
 
     # Fail validation if node renderer cannot resolve a node type
     ALLOWED_TYPES = {
@@ -1098,29 +1028,61 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
         if n_type not in ALLOWED_TYPES:
             validation_findings.append(f"Quality Gate: Node renderer cannot resolve node type '{n_type}' for node '{node.get('id')}'.")
 
-    # 1b. Resource Selection Locking (compute platform + database platform)
-    if compute_type:
-        compute_upper = str(compute_type).upper().replace("_", " ").replace("-", " ")
-        AKS_FORBIDDEN = {"app-service-plan", "web-app", "container-app-env"}
-        APPSERVICE_FORBIDDEN = {"aks-cluster", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", "container-app-env"}
-        CONTAINERAPPS_FORBIDDEN = {"aks-cluster", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", "app-service-plan", "web-app"}
-
-        if "AKS" in compute_upper or "KUBERNETES" in compute_upper:
-            forbidden = AKS_FORBIDDEN
-            locked_platform = "AKS"
-        elif "APP SERVICE" in compute_upper or "WEB APP" in compute_upper:
-            forbidden = APPSERVICE_FORBIDDEN
-            locked_platform = "App Service"
-        else:
-            forbidden = CONTAINERAPPS_FORBIDDEN
-            locked_platform = "Container Apps"
-
+    # 1b. Provider Locking Rules
+    # Detect provider from nodes or default
+    prov_detect = (provider or next((str(n.get("data", {}).get("provider")).lower() for n in nodes if n.get("data", {}).get("provider")), "azure")).lower()
+    
+    if prov_detect == "azure":
+        forbidden_keywords = ["eks", "rds", "s3", "cloudfront", "alb", "cloudwatch", "aws_", "gke", "cloud-sql", "cloudsql", "cloud-storage", "google_"]
         for n in nodes:
-            nid = str(n.get("id", "")).lower()
-            if nid in forbidden:
-                validation_findings.append(f"Resource Locking: Compute platform is locked to '{locked_platform}', but forbidden resource '{nid}' was generated. Substitution detected.")
+            n_id = str(n.get("id", "")).lower()
+            n_tf = str(n.get("data", {}).get("terraform_resource", "")).lower()
+            if any(kw in n_id or kw in n_tf for kw in forbidden_keywords):
+                validation_findings.append(f"Provider Locking: Azure is selected, but forbidden resource '{n_id}' or type '{n_tf}' was generated.")
+    elif prov_detect == "aws":
+        forbidden_keywords = ["aks", "azurerm_", "app-gateway", "appgateway", "appgw", "keyvault", "key-vault", "azure-monitor", "gke", "cloud-sql", "cloudsql", "cloud-storage", "google_"]
+        for n in nodes:
+            n_id = str(n.get("id", "")).lower()
+            n_tf = str(n.get("data", {}).get("terraform_resource", "")).lower()
+            if any(kw in n_id or kw in n_tf for kw in forbidden_keywords):
+                validation_findings.append(f"Provider Locking: AWS is selected, but forbidden resource '{n_id}' or type '{n_tf}' was generated.")
+    elif prov_detect == "gcp":
+        forbidden_keywords = ["aks", "azurerm_", "app-gateway", "appgateway", "appgw", "keyvault", "key-vault", "azure-monitor", "eks", "rds", "s3", "cloudfront", "alb", "cloudwatch", "aws_"]
+        for n in nodes:
+            n_id = str(n.get("id", "")).lower()
+            n_tf = str(n.get("data", {}).get("terraform_resource", "")).lower()
+            if any(kw in n_id or kw in n_tf for kw in forbidden_keywords):
+                validation_findings.append(f"Provider Locking: GCP is selected, but forbidden resource '{n_id}' or type '{n_tf}' was generated.")
 
-    # 1c. Edge Source/Target Existence Validation
+    # 1c. Compute Platform Locking Rules
+    if compute_type:
+        comp_lower = str(compute_type).lower()
+        if "kubernetes" in comp_lower or "aks" in comp_lower or "eks" in comp_lower or "gke" in comp_lower:
+            # Kubernetes allowed. App Service, Container Apps forbidden.
+            forbidden = ["app-service", "appservice", "web-app", "webapp", "container-app", "containerapp", "azurerm_linux_web_app", "azurerm_container_app", "aws_elastic_beanstalk", "aws_ecs", "google_cloud_run"]
+            for n in nodes:
+                n_id = str(n.get("id", "")).lower()
+                n_tf = str(n.get("data", {}).get("terraform_resource", "")).lower()
+                if any(f in n_id or f in n_tf for f in forbidden):
+                    validation_findings.append(f"Compute Locking: Kubernetes is selected, but forbidden compute resource '{n_id}' or type '{n_tf}' was generated.")
+        elif "app service" in comp_lower or "web app" in comp_lower:
+            # App Service allowed. Kubernetes, Container Apps forbidden.
+            forbidden = ["aks-", "eks-", "gke-", "kubernetes", "node-pool", "nodepool", "container-app", "containerapp", "azurerm_kubernetes_cluster", "azurerm_container_app", "aws_eks", "aws_ecs", "google_container_cluster", "google_cloud_run"]
+            for n in nodes:
+                n_id = str(n.get("id", "")).lower()
+                n_tf = str(n.get("data", {}).get("terraform_resource", "")).lower()
+                if any(f in n_id or f in n_tf for f in forbidden):
+                    validation_findings.append(f"Compute Locking: App Service is selected, but forbidden compute resource '{n_id}' or type '{n_tf}' was generated.")
+        elif "container app" in comp_lower:
+            # Container Apps allowed. Kubernetes, App Service forbidden.
+            forbidden = ["aks-", "eks-", "gke-", "kubernetes", "node-pool", "nodepool", "app-service", "appservice", "web-app", "webapp", "azurerm_kubernetes_cluster", "azurerm_linux_web_app", "aws_eks", "aws_elastic_beanstalk", "google_container_cluster", "google_app_engine"]
+            for n in nodes:
+                n_id = str(n.get("id", "")).lower()
+                n_tf = str(n.get("data", {}).get("terraform_resource", "")).lower()
+                if any(f in n_id or f in n_tf for f in forbidden):
+                    validation_findings.append(f"Compute Locking: Container Apps is selected, but forbidden compute resource '{n_id}' or type '{n_tf}' was generated.")
+
+    # 1d. Edge Source/Target Existence Validation
     for edge in edges:
         src = edge.get("source")
         tgt = edge.get("target")
@@ -1150,35 +1112,12 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
         # Check matching parentNode and subnet metadata
         parent = node.get("parentNode")
         subnet_meta = node.get("data", {}).get("subnet", "")
-        if parent and parent.startswith("subnet-"):
-            if subnet_meta.startswith("subnet-") and subnet_meta != parent:
-                consistency_warnings.append(f"Consistency Gate: Node '{n_id}' has parentNode '{parent}' but subnet metadata '{subnet_meta}' mismatch.")
-            elif "." in subnet_meta:
-                parent_sub_type = parent.replace("subnet-", "")
-                sub_cidr_map = {
-                    "ingress": ".1.",
-                    "app": ".2.",
-                    "data": ".3.",
-                    "mgmt": ".4.",
-                    "pe": ".5."
-                }
-                expected_pattern = sub_cidr_map.get(parent_sub_type)
-                if expected_pattern and expected_pattern not in subnet_meta:
-                    consistency_warnings.append(f"Consistency Gate: Node '{n_id}' has parentNode '{parent}' but CIDR subnet metadata '{subnet_meta}' mismatch.")
-
-        # Check correct subnet placement (Private Endpoints in subnet-pe, Storage in subnet-data)
-        is_pe = ("pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower) and n_type != "SubnetGroupNode"
-        if is_pe:
-            if parent != "subnet-pe":
-                consistency_warnings.append(f"Consistency Gate: Private Endpoint '{n_id}' must live in 'subnet-pe'.")
-
-        is_storage_resource = (
-            n_type in ["DatabaseNode", "CacheNode", "StorageNode"] or
-            any(db_kw in n_id_lower or db_kw in lbl_lower for db_kw in ["db-", "database", "postgresql", "mysql", "redis", "storage-account", "blob"])
-        ) and not is_pe and parent != "vnet-group" and "backup" not in n_id_lower and "recovery" not in n_id_lower
-        if is_storage_resource:
-            if parent != "subnet-data":
-                consistency_warnings.append(f"Consistency Gate: Storage resource '{n_id}' must live in 'subnet-data'.")
+        if parent:
+            if parent not in node_ids:
+                consistency_warnings.append(f"Consistency Gate: Node '{n_id}' references non-existent parentNode '{parent}'.")
+            elif parent.startswith("subnet-") or parent.startswith("snet-"):
+                if subnet_meta and subnet_meta != parent:
+                    consistency_warnings.append(f"Consistency Gate: Node '{n_id}' has parentNode '{parent}' but subnet metadata '{subnet_meta}' mismatch.")
 
     return validation_findings + consistency_warnings + complexity_warnings
 
@@ -1242,9 +1181,10 @@ def compute_node_cost(node: Dict[str, Any], region: str = "eastus") -> float:
 
 def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], warnings: List[str], provider: str = "azure") -> Dict[str, Any]:
     """
-    Calculate 5 completeness scores:
+    Calculate 5 completeness scores + overall architecture score:
     - security_score: Starts at 100, drops for missing vault, WAF, PE, NSGs
-    - reliability_score: Drops for missing replicas, backup vaults
+    - reliability_score: Drops for missing replicas, backups, HA
+    - scalability_score: Drops for missing autoscale, load balancing, caching
     - cost_efficiency_score: Based on total cost and overengineering
     - terraform_alignment_score: Drops for round-trip drift warnings
     - architecture_score: Weighted average of the above
@@ -1272,13 +1212,21 @@ def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[st
         rel_score -= 20
     if not any("backup" in nid or "recovery" in nid for nid in node_ids_lower):
         rel_score -= 15
-    if not any("hpa" in nid or "autoscaler" in lbl for nid in node_ids_lower for lbl in node_labels_lower):
-        rel_score -= 10
     db_nodes = [n for n in nodes if n.get("type") == "DatabaseNode"]
     if len(db_nodes) < 2:
-        rel_score -= 10
+        rel_score -= 15
     rel_score = max(0, rel_score)
     
+    # Scalability Score
+    scal_score = 100
+    if not any("hpa" in nid or "autoscaler" in lbl or "autoscale" in lbl for nid in node_ids_lower for lbl in node_labels_lower):
+        scal_score -= 20
+    if not any(x in nid or "loadbalancer" in lbl or "lb" in lbl or "gateway" in lbl or "alb" in lbl for nid in node_ids_lower for lbl in node_labels_lower for x in ["app-gateway", "appgw", "alb", "ingress-controller"]):
+        scal_score -= 25
+    if not any("redis" in nid or "cache" in nid for nid in node_ids_lower):
+        scal_score -= 15
+    scal_score = max(0, scal_score)
+
     # Cost Efficiency Score
     total_cost = sum(compute_node_cost(n) for n in nodes)
     cost_score = 100
@@ -1298,15 +1246,17 @@ def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[st
     
     # Architecture Score (weighted average)
     arch_score = int(
-        sec_score * 0.30 +
-        rel_score * 0.25 +
+        sec_score * 0.25 +
+        rel_score * 0.20 +
+        scal_score * 0.15 +
         cost_score * 0.20 +
-        tf_score * 0.25
+        tf_score * 0.20
     )
     
     return {
         "security_score": sec_score,
         "reliability_score": rel_score,
+        "scalability_score": scal_score,
         "cost_efficiency_score": cost_score,
         "terraform_alignment_score": tf_score,
         "architecture_score": arch_score,

@@ -45,7 +45,7 @@ ARCHITECTURE_REASONING_PROMPT = "Reason architecture"
 ARCHITECTURE_PLANNING_PROMPT = """You are an expert Cloud Architect.
 Your task is to take the analyzed requirements and generate a structured cloud architecture plan.
 Analyze the requirements and determine:
-1. Virtual Networks (VNet/VPC) and Subnets. You MUST plan for exactly 5 standard subnets: 'subnet-ingress', 'subnet-mgmt', 'subnet-app', 'subnet-data', and 'subnet-pe'.
+1. Virtual Networks (VNet/VPC) and Subnets. Determine the subnets dynamically based on scale and security/isolation requirements.
 2. Compute platforms selected (e.g. AKS, App Service, or Container Apps) and required container nodes/pods or VMs.
 3. Databases, cache (Redis), and storage accounts required.
 4. Security layers (Key Vaults, WAF policies, Network Security Groups, Route Tables, Private Endpoints).
@@ -55,7 +55,7 @@ Analyze the requirements and determine:
 Strictly follow these rules:
 - You MUST strictly use the user's selected Compute platform (e.g. AKS, App Service, Container Apps) and Database type specified in the analyzed requirements. Do NOT substitute them or default to something else (e.g., if database is CosmosDB, you MUST plan for CosmosDB/DynamoDB/Firestore and NOT PostgreSQL/MySQL).
 - Do NOT use hardcoded microservice templates. Tailor the microservices list exactly to the application description.
-- You MUST generate exactly 5 subnets: 'subnet-ingress', 'subnet-mgmt', 'subnet-app', 'subnet-data', and 'subnet-pe'. Do not generate dynamic subnet names like subnet-auth.
+- Do NOT assume a fixed list of subnets. Determine the subnets dynamically based on requirements.
 - Map every resource to its respective cloud provider and Terraform resource type.
 
 Output your plan as a valid JSON object matching this schema:
@@ -108,24 +108,13 @@ You MUST represent all container groups and nested relationships:
 2. Every standard resource must be placed inside its correct parent container node using the `parentNode` attribute.
 3. Coordinates (`position.x`, `position.y`) for nested nodes MUST be relative to their parent container. Ensure nodes do not overlap.
 
-VALIDATION ENGINE RULES YOU MUST COMPLY WITH:
-1. Total Node Count MUST be at least 25 nodes.
-2. Total Edge Count MUST be at least 35 edges. You MUST connect all microservices, databases, gateways, firewalls, routing tables, network security groups, and monitoring tools to ensure a complete, highly interconnected graph. Create edges for traffic routing (e.g. gateway -> firewall -> subnets -> microservices -> private endpoints -> databases/cache), security associations (e.g. NSGs connected to their subnets), monitoring metrics (e.g. resources to App Insights / Diagnostic Settings), and management paths (e.g. Route Tables connected to subnets).
-3. You MUST generate at least 5 microservice nodes with IDs starting with 'svc-' (e.g., 'svc-auth', 'svc-cart', 'svc-catalog', 'svc-order', 'svc-payment') placed inside 'subnet-app' (parentNode: 'subnet-app').
-4. You MUST generate exactly 5 subnets with horizontal layout:
-   - 'subnet-ingress' (Ingress Subnet)
-   - 'subnet-mgmt' (Management Subnet)
-   - 'subnet-app' (Application Subnet)
-   - 'subnet-data' (Data Subnet)
-   - 'subnet-pe' (Private Endpoint Subnet)
-5. For EVERY subnet of the 5 subnets, you MUST generate exactly one Route Table node (id containing 'rt-', e.g., 'rt-ingress') and exactly one Network Security Group node (id containing 'nsg-', e.g., 'nsg-ingress') placed inside that subnet (parentNode: subnet ID). You must have exactly 5 NSG nodes and 5 Route Table nodes in total.
-6. A VNet/VPC group node ('vnet-group' of type 'VNetGroupNode') must exist.
-7. You MUST generate at least one MonitoringNode (e.g., log-analytics, app-insights, or azure-monitor). Do not duplicate these monitoring singletons.
-8. You MUST generate a backup/recovery vault resource (e.g., 'backup-vault' or 'recovery-vault') exactly once.
-9. You MUST generate a Secrets/Key Vault node (type 'SecurityNode', id containing 'vault' or 'keyvault') exactly once.
-10. You MUST generate Private Endpoints (ids starting with 'pe-', e.g., 'pe-db') and place them in the 'subnet-pe' subnet (parentNode: 'subnet-pe'). The Private Endpoint Subnet must not be empty.
-11. Databases (e.g., 'db-primary', 'db-replica'), Redis cache (e.g., 'redis'), and storage accounts (e.g., 'storage-account') must live in 'subnet-data' (parentNode: 'subnet-data') unless they are Private Endpoints.
-12. You MUST strictly use the Compute platform and Database type specified in the architecture plan and analyzed requirements. Do NOT default to AKS or PostgreSQL unless they are explicitly selected. E.g., if database is CosmosDB, generate CosmosDB resources (e.g. 'db-primary' of type 'DatabaseNode' with label matching the CosmosDB service, and PE 'pe-db' pointing to it) and NOT PostgreSQL resources. If compute is Container Apps, generate 'container-app-env' and do NOT generate any AKS nodes.
+RULES YOU MUST COMPLY WITH:
+1. You MUST generate a Virtual Network node (type: 'VNetGroupNode', id e.g. 'vnet-group').
+2. You MUST decide and generate dynamic subnets (type: 'SubnetGroupNode') appropriate for the workload. Give them clean IDs (e.g., 'subnet-app', 'subnet-db') and place resources inside them.
+3. You MUST generate the selected Compute platform (e.g. AKS cluster, Web App, or Container App Environment) and place it inside the appropriate subnet.
+4. Databases, cache (Redis), and storage accounts must live in their respective subnets.
+5. You MUST strictly use the Compute platform and Database type specified in the architecture plan and analyzed requirements. Do NOT default to AKS or PostgreSQL unless they are explicitly selected.
+6. Generate edges connecting the resources logically (e.g. gateway -> compute -> database).
 
 Every node's "data" object MUST contain exactly these metadata fields:
 {
