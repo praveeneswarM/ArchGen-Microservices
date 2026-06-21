@@ -130,13 +130,7 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
   const [resourceGroup, setResourceGroup] = useState("rg-production");
   const [vnetCIDR, setVnetCIDR] = useState("10.0.0.0/16");
   const [additionalVNets, setAdditionalVNets] = useState("");
-  const [selectedSubnets, setSelectedSubnets] = useState({
-    ingress: true,
-    application: true,
-    data: true,
-    management: true,
-    privateEndpoint: true,
-  });
+
   const [hasWAF, setHasWAF] = useState(true);
   const [hasFirewall, setHasFirewall] = useState(true);
   const [hasKeyVault, setHasKeyVault] = useState(true);
@@ -211,14 +205,8 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
     e.preventDefault();
     if (!validateStep(step)) return;
     
-    // Construct dynamic subnets
-    const subnetDetails = [
-      selectedSubnets.ingress && "Ingress: 10.0.1.0/24",
-      selectedSubnets.application && "Application: 10.0.2.0/24",
-      selectedSubnets.data && "Data: 10.0.3.0/24",
-      selectedSubnets.management && "Management: 10.0.4.0/24",
-      selectedSubnets.privateEndpoint && "Private Endpoint: 10.0.5.0/24",
-    ].filter(Boolean).join(", ");
+    // Let AI decide subnets dynamically
+    const subnetDetails = "Let AI Decide dynamically based on workload";
 
     const monitoringDetails = Object.entries(monitoring)
       .filter(([_, active]) => active)
@@ -662,24 +650,7 @@ RPO: ${rpo}
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] text-slate-400 font-medium font-mono">Provision Subnets</label>
-                    <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-                      {Object.entries(selectedSubnets).map(([key, value]) => (
-                        <label key={key} className="flex items-center gap-1.5 p-1.5 rounded bg-white/5 border border-white/5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={value}
-                            onChange={(e) => setSelectedSubnets((prev) => ({ ...prev, [key]: e.target.checked }))}
-                            className="rounded border-slate-700 bg-[#0b0f19] text-cyan-500"
-                          />
-                          <span className="capitalize text-slate-300">
-                            {key.replace(/([A-Z])/g, " $1")} Subnet
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+
 
                   <div className="grid grid-cols-2 gap-2 text-[10px] font-mono border-t border-white/5 pt-3">
                     <label className="flex items-center gap-1.5 p-1.5 rounded bg-white/5 border border-white/5 cursor-pointer">
