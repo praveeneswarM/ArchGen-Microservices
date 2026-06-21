@@ -18,15 +18,18 @@ You MUST extract and preserve all user choices exactly as provided. Specifically
 - "rpo": Recovery Point Objective.
 
 You must analyze the application description to identify required capabilities, caching needs, security needs, and compliance standards.
-Specifically, map the requirements to a list of required capabilities from the following set:
-- "object_storage" (requires storage node e.g. Blob/S3 for file uploads)
-- "caching" (requires cache node e.g. Redis for high concurrent users or load)
+Specifically, map the requirements to a list of required capabilities from the following set.
+Only include a capability if the user explicitly mentions or requires it:
+- "object_storage" (requires storage node e.g. Blob/S3 for file uploads, documents, media)
+- "caching" (requires cache node e.g. Redis for high concurrent users or explicit caching needs)
 - "secrets_management" (requires key vault/secrets manager to encrypt keys/credentials)
-- "disaster_recovery" (requires backup and recovery vault resources)
-- "secure_connectivity" (requires private endpoint connections and network isolation)
+- "disaster_recovery" (requires backup and recovery vault resources — only if HA/DR explicitly required)
 - "gpu_compute" (requires GPU-capable compute resources for AI/ML workloads)
 - "messaging" (requires queue/event/pubsub service for real-time notifications or eventing)
 - "global_distribution" (requires CDN / global load balancer for global reach)
+
+Do NOT include "secure_connectivity" or "network_isolation" in required_capabilities.
+These are infrastructure implementation decisions made by the architect, not user-stated business requirements.
 
 Your output MUST be a valid JSON object matching the following structure:
 {
@@ -61,7 +64,7 @@ ARCHITECTURE_REASONING_PROMPT = "Reason architecture"
 ARCHITECTURE_PLANNING_PROMPT = """You are an expert Cloud Architect.
 Your task is to take the analyzed requirements and generate a structured cloud architecture plan.
 Analyze the requirements and determine:
-1. Virtual Networks (VNet/VPC) and Subnets. Determine the subnets dynamically based on scale and security/isolation requirements.
+1. Virtual Networks (VNet/VPC) and Subnets - using ONLY the canonical subnet IDs defined below.
 2. Compute platforms selected (e.g. AKS, App Service, or Container Apps) and required container nodes/pods or VMs.
 3. Databases, cache (Redis), and storage accounts required.
 4. Security layers (Key Vaults, WAF policies, Network Security Groups, Route Tables, Private Endpoints).
@@ -73,8 +76,18 @@ Strictly follow these rules:
 - Network security groups, route tables, private endpoints, and backup vaults should be planned only if compliance, sensitivity, availability, or capabilities justify them. Avoid overengineering basic startups.
 - You MUST strictly use the user's selected Compute platform (e.g. AKS, App Service, Container Apps) and Database type specified in the analyzed requirements. Do NOT substitute them or default to something else.
 - Do NOT use hardcoded microservice templates. Tailor the microservices list exactly to the application description.
-- Do NOT assume a fixed list of subnets. Determine the subnets dynamically based on requirements.
 - Map every resource to its respective cloud provider and Terraform resource type.
+
+CANONICAL SUBNET IDs - You MUST use ONLY these subnet IDs. Do NOT invent custom subnet names:
+  subnet-ingress    -> WAF, App Gateway, Load Balancer, Front Door
+  subnet-app        -> Compute (AKS cluster, App Service, Container Apps, microservices)
+  subnet-data       -> Databases, Redis Cache, Storage Accounts
+  subnet-mgmt       -> Bastion Host, Managed Identity, Jumpbox, Key Vault
+  subnet-pe         -> Private Endpoints ONLY
+  shared-services-group -> Key Vault, Log Analytics, App Insights, ACR, Azure Monitor
+
+Do NOT create subnet IDs like subnet-auth, subnet-catalog, subnet-payment, subnet-cache, subnet-storage, subnet-secrets.
+All application services run in subnet-app. All data stores run in subnet-data.
 
 Output your plan as a valid JSON object matching this schema:
 {
@@ -85,7 +98,7 @@ Output your plan as a valid JSON object matching this schema:
     "vnet_cidr": "string",
     "subnets": [
       {
-        "id": "string",
+        "id": "string (MUST be one of: subnet-ingress, subnet-app, subnet-data, subnet-mgmt, subnet-pe, shared-services-group)",
         "name": "string",
         "cidr": "string",
         "purpose": "string"
@@ -98,7 +111,7 @@ Output your plan as a valid JSON object matching this schema:
       "name": "string",
       "type": "string (e.g. compute, database, cache, storage, security, monitoring, gateway)",
       "terraform_resource": "string (e.g. azurerm_kubernetes_cluster)",
-      "subnet": "string (subnet id if applicable, or null)",
+      "subnet": "string (MUST be one of the canonical subnet IDs above, or null)",
       "cost_estimate": "string (e.g. $150.0/mo)",
       "custom_metadata": {}
     }
@@ -118,87 +131,58 @@ TOPOLOGY_GENERATION_PROMPT = """You are an expert Cloud Architect and Frontend E
 Your task is to take the requirement analysis and the architecture plan, and generate a highly detailed visual topology graph.
 
 You MUST represent all container groups and nested relationships:
-1. Container group nodes (e.g., Region, Resource Group, VNet, Subnets, and AKS Clusters/environments if selected) MUST be represented as group nodes:
-   - "region-group" (type: "RegionGroupNode", width, height)
-   - "rg-group" (type: "ResourceGroupNode", parentNode: "region-group", width, height)
-   - "vnet-group" (type: "VNetGroupNode", parentNode: "rg-group", width, height)
-   - Subnets (type: "SubnetGroupNode", parentNode: "vnet-group", position x, y, width, height)
-2. Every standard resource must be placed inside its correct parent container node using the `parentNode` attribute.
-3. Coordinates (`position.x`, `position.y`) for nested nodes MUST be relative to their parent container. Ensure nodes do not overlap.
+1. Container group nodes (Region, Resource Group, VNet, Subnets) MUST be represented as group nodes:
+   - "region-group" (type: "RegionGroupNode")
+   - "rg-group" (type: "ResourceGroupNode", parentNode: "region-group")
+   - "vnet-group" (type: "VNetGroupNode", parentNode: "rg-group")
+   - Subnets (type: "SubnetGroupNode", parentNode: "vnet-group")
+2. Every resource node must be placed inside its correct parent subnet using the `parentNode` attribute.
+3. Coordinates (`position.x`, `position.y`) are relative to the parent container. Ensure nodes do not overlap.
 
-RULES YOU MUST COMPLY WITH:
-1. You MUST generate a Virtual Network node (type: 'VNetGroupNode', id e.g. 'vnet-group').
-2. You MUST decide and generate dynamic subnets (type: 'SubnetGroupNode') appropriate for the workload. Give them clean IDs (e.g., 'subnet-app', 'subnet-db') and place resources inside them.
-3. You MUST generate the selected Compute platform (e.g. AKS cluster, Web App, or Container App Environment) and place it inside the appropriate subnet.
-4. Databases, cache (Redis), and storage accounts must live in their respective subnets.
-5. You MUST strictly use the Compute platform and Database type specified in the architecture plan and analyzed requirements. Do NOT default to AKS or PostgreSQL unless they are explicitly selected.
-6. Generate edges connecting the resources logically (e.g. gateway -> compute -> database).
+CRITICAL: CANONICAL SUBNET IDs — YOU MUST USE EXACTLY THESE SUBNET IDs. DO NOT INVENT NEW ONES.
 
-Every node's "data" object MUST contain exactly these metadata fields:
+| Subnet ID              | Purpose                                                                                 |
+|------------------------|-----------------------------------------------------------------------------------------|
+| subnet-ingress         | Internet-facing: WAF, App Gateway, Azure Firewall, Load Balancer, Front Door            |
+| subnet-app             | Compute: AKS cluster, App Service Plan, Container App Environment, microservices        |
+| subnet-data            | Data layer: Databases (PostgreSQL, CosmosDB, MySQL), Redis cache, Storage Accounts      |
+| subnet-mgmt            | Management: Bastion Host, Jumpbox, Managed Identity, Role Assignments                  |
+| subnet-pe              | Private Endpoints only (pe-* nodes)                                                     |
+| shared-services-group  | Shared global: Key Vault, Log Analytics, App Insights, Azure Monitor, ACR, Backup Vault |
+
+
+STRICTLY FORBIDDEN: Do NOT use subnet IDs like "subnet-authentication", "subnet-file-uploads",
+"subnet-reporting", "subnet-notifications", "subnet-logs", "subnet-messaging", or any other
+custom names. ALL resources MUST map to one of the 6 canonical subnet IDs above.
+
+ARCHITECTURE RULES:
+1. ALWAYS generate a GatewayNode (App Gateway or Load Balancer) in subnet-ingress as the entry point.
+2. ALWAYS generate the compute platform node in subnet-app (use the exact type from the architecture plan).
+3. ALWAYS place the primary database node in subnet-data.
+4. Place Key Vault, Log Analytics, and App Insights in shared-services-group.
+5. Generate edges: GatewayNode -> ComputeNode -> DatabaseNode (and other connections as needed).
+6. Use the EXACT Compute platform and Database type from the architecture plan. Do NOT substitute.
+
+Every node's "data" object MUST contain exactly these fields:
 {
-  "label": "string (human-readable label)",
-  "resource_id": "string (unique resource ID matching the plan)",
-  "resource_type": "string (e.g. subnet, vnet, database, cache, compute, security, monitoring)",
-  "terraform_resource": "string (Terraform resource type name, e.g. azurerm_kubernetes_cluster)",
-  "provider": "string (azure, aws, or gcp)",
-  "subnet": "string (parent subnet node ID reference if applicable, or empty)",
-  "cost_estimate": "string (estimated monthly cost, e.g. $100.0/mo)"
+  "label": "string",
+  "resource_id": "string",
+  "resource_type": "string",
+  "terraform_resource": "string",
+  "provider": "string (azure | aws | gcp)",
+  "subnet": "string (canonical subnet ID or empty for top-level groups)",
+  "cost_estimate": "string (e.g. $100.0/mo)"
 }
 
-Allowed Node types are:
-'GatewayNode', 'FrontendNode', 'BackendNode', 'DatabaseNode', 'CacheNode', 'StorageNode', 'MonitoringNode', 'SecurityNode', 'RegionGroupNode', 'ResourceGroupNode', 'VNetGroupNode', 'SubnetGroupNode'
+Allowed node types: 'GatewayNode', 'FrontendNode', 'BackendNode', 'DatabaseNode', 'CacheNode',
+'StorageNode', 'MonitoringNode', 'SecurityNode', 'RegionGroupNode', 'ResourceGroupNode',
+'VNetGroupNode', 'SubnetGroupNode'
 
-If you receive validation findings/feedback:
-- Identify which nodes/edges violated the rules.
-- Re-generate the topology, correcting all the issues specified in the validation findings.
+If you receive validation findings: re-generate the topology correcting all listed issues.
 
-You must output ONLY valid JSON.
-The JSON must contain exactly three keys: "nodes", "edges", and "services".
+Output ONLY valid JSON with exactly three keys: "nodes", "edges", "services".
+Do not include markdown blocks like ```json."""
 
-Expected JSON Schema:
-{
-  "nodes": [
-    {
-      "id": "string",
-      "type": "string",
-      "parentNode": "string (parent container node ID)",
-      "position": {
-        "x": number,
-        "y": number
-      },
-      "style": {
-        "width": number,
-        "height": number
-      },
-      "data": {
-        "label": "string",
-        "resource_id": "string",
-        "resource_type": "string",
-        "terraform_resource": "string",
-        "provider": "string",
-        "subnet": "string",
-        "cost_estimate": "string"
-      }
-    }
-  ],
-  "edges": [
-    {
-      "id": "string",
-      "source": "string (node id)",
-      "target": "string (node id)",
-      "animated": true
-    }
-  ],
-  "services": [
-    {
-      "name": "string",
-      "category": "string",
-      "description": "string"
-    }
-  ]
-}
-
-Ensure your response is valid JSON. Do not include markdown blocks like ```json."""
 ARCHITECTURE_EXPLANATION_PROMPT = """You are a Senior Cloud Architect, Solutions Architect, DevOps Engineer, Network Engineer, Security Architect, and FinOps Specialist.
 
 Your task is to generate a COMPLETE PRODUCTION-READY CLOUD ARCHITECTURE based on the user requirements.

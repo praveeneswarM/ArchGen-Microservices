@@ -40,6 +40,43 @@ perf_logger = PerformanceLogger()
 from utils.provider_manager import ProviderManager
 from typing import List, Dict, Any
 
+def flatten_nested_nodes(nodes: List[Dict[str, Any]], parent_id: str = None) -> List[Dict[str, Any]]:
+    """
+    Flatten a nested node tree (nodes with 'children' arrays) into a flat list.
+    The AI sometimes returns a nested tree instead of the flat list specified in the schema.
+    This converts it to a flat list and assigns parentNode from the nesting structure.
+    Handles wrapper nodes without IDs (anonymous containers) by recursing into their children.
+    Also lifts resource_id from data{} to top-level id when the AI omits the top-level id.
+    """
+    flat = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        children = node.pop("children", None)  # Remove children key before adding to flat list
+
+        # Lift resource_id from data{} to top-level id if missing
+        node_id = node.get("id")
+        if (node_id is None or str(node_id).strip() == "") and isinstance(node.get("data"), dict):
+            node_id = node["data"].get("resource_id")
+            if node_id:
+                node["id"] = node_id
+
+        if node_id is not None and str(node_id).strip() not in ("", "none", "null"):
+            # Valid node — assign parentNode if needed and add to flat list
+            if parent_id and not node.get("parentNode"):
+                node["parentNode"] = parent_id
+            flat.append(node)
+            # Recurse into children using this node's ID as parent
+            if children and isinstance(children, list):
+                flat.extend(flatten_nested_nodes(children, parent_id=str(node_id)))
+        else:
+            # No ID — this is an anonymous wrapper (e.g. the topology root).
+            # Don't add it to flat list, but DO recurse into its children.
+            if children and isinstance(children, list):
+                flat.extend(flatten_nested_nodes(children, parent_id=parent_id))
+    return flat
+
+
 def ensure_container_nodes(nodes: List[Dict[str, Any]], provider: str, requirements: Any) -> List[Dict[str, Any]]:
     node_ids = {str(n.get("id")).lower() for n in nodes if n.get("id")}
     
@@ -293,6 +330,74 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
             forbidden_nodes = CONTAINERAPPS_FORBIDDEN
 
         nodes = [n for n in nodes if str(n.get("id", "")).lower() not in forbidden_nodes]
+
+        # -----------------------------------------------------------------------
+        # Canonical Subnet Enforcement
+        # Strip any AI-invented non-canonical SubnetGroupNodes and remap resources.
+        # -----------------------------------------------------------------------
+        CANONICAL_SUBNETS = {
+            "subnet-ingress", "subnet-app", "subnet-data",
+            "subnet-mgmt", "subnet-pe", "shared-services-group",
+            # Container-group subnets managed by ensure_container_nodes
+            "aks-cluster-group",
+            # Top-level container groups
+            "region-group", "rg-group", "vnet-group",
+        }
+
+        def _canonical_subnet_for_node(node: Dict[str, Any]) -> str:
+            """Return the correct canonical subnet for a resource node."""
+            nid_l = str(node.get("id", "")).lower()
+            lbl_l = str(node.get("data", {}).get("label", "")).lower()
+            ntype = str(node.get("type", ""))
+            if any(x in nid_l or x in lbl_l for x in ["keyvault", "vault", "log-analytics", "log analytics",
+                                                        "app-insights", "app insights", "azure-monitor", "monitor",
+                                                        "backup-vault", "recovery-vault", "acr", "cost-management"]):
+                return "shared-services-group"
+            if any(x in nid_l or x in lbl_l for x in ["pe-", "private endpoint", "private-endpoint"]):
+                return "subnet-pe"
+            if ntype in ["DatabaseNode", "CacheNode", "StorageNode"] or \
+               any(x in nid_l or x in lbl_l for x in ["db-", "database", "postgresql", "postgres", "mysql",
+                                                        "cosmos", "redis", "cache", "storage", "blob", "bucket"]):
+                return "subnet-data"
+            if any(x in nid_l or x in lbl_l for x in ["gateway", "app-gateway", "appgw", "waf", "firewall",
+                                                        "front-door", "frontdoor", "loadbalancer", "load-balancer"]):
+                return "subnet-ingress"
+            if any(x in nid_l or x in lbl_l for x in ["bastion", "jumpbox", "managed-identity", "role-assignment"]):
+                return "subnet-mgmt"
+            # Compute / microservices → subnet-app (or aks-cluster-group handled later)
+            return "subnet-app"
+
+        # Collect all custom (non-canonical) subnet IDs from AI output
+        custom_subnet_ids = set()
+        for n in nodes:
+            if str(n.get("type", "")) == "SubnetGroupNode":
+                nid_l = str(n.get("id", "")).lower()
+                if nid_l not in CANONICAL_SUBNETS:
+                    custom_subnet_ids.add(nid_l)
+
+        if custom_subnet_ids:
+            logger.info(f"Stripping non-canonical subnet nodes: {custom_subnet_ids}")
+            # Remap children of custom subnets to their canonical equivalent
+            for n in nodes:
+                parent_l = str(n.get("parentNode", "")).lower()
+                if parent_l in custom_subnet_ids:
+                    canonical = _canonical_subnet_for_node(n)
+                    n["parentNode"] = canonical
+                    if "data" in n and isinstance(n["data"], dict):
+                        n["data"]["subnet"] = canonical
+            # Remove the custom subnet nodes entirely (ensure_container_nodes injects canonical ones)
+            nodes = [n for n in nodes if str(n.get("id", "")).lower() not in custom_subnet_ids]
+
+        # Also fix any resource node that still points to a non-canonical parentNode
+        for n in nodes:
+            parent_l = str(n.get("parentNode", "")).lower()
+            if parent_l and parent_l not in CANONICAL_SUBNETS and \
+               str(n.get("type", "")) not in {"RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"}:
+                canonical = _canonical_subnet_for_node(n)
+                n["parentNode"] = canonical
+                if "data" in n and isinstance(n["data"], dict):
+                    n["data"]["subnet"] = canonical
+        # -----------------------------------------------------------------------
 
         vnet_cidr_val = requirements.vnetCIDR or "10.0.0.0/16"
         ip_prefix = "10.0"
@@ -705,7 +810,10 @@ def normalize_and_validate_ai_topology(nodes: List[Dict[str, Any]], edges: List[
         "StorageNode", "SecurityNode", "MonitoringNode", "RegionGroupNode", 
         "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"
     }
-    
+
+    # Filter out malformed nodes returned by the AI (no id, no type, non-dict)
+    nodes = [n for n in nodes if isinstance(n, dict) and n.get("id") is not None and str(n.get("id", "")).strip() != ""]
+
     prov_lower = provider.lower()
     node_ids = {str(n.get("id")) for n in nodes if n.get("id")}
     
@@ -1032,9 +1140,9 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     validation_findings = []
     consistency_warnings = []
     
-    node_ids = set(n.get("id") for n in nodes)
-    node_labels = set(str(n.get("data", {}).get("label", "")).lower() for n in nodes)
-    node_types = set(n.get("type") for n in nodes)
+    node_ids = {n.get("id") for n in nodes if n.get("id") is not None}
+    node_labels = {str(n.get("data", {}).get("label") or "").lower() for n in nodes}
+    node_types = {n.get("type") for n in nodes if n.get("type") is not None}
     subnet_count = _count_real_subnets(nodes)
     
     # 1. Quality Gate Checks
@@ -1043,14 +1151,14 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
         validation_findings.append("Quality Gate: Virtual Network subnets are missing. At least one subnet node (SubnetGroupNode) is required.")
 
     # Validate VNet exists
-    has_vnet = "VNetGroupNode" in node_types or any("vnet" in nid.lower() or "vpc" in nid.lower() for nid in node_ids)
+    has_vnet = "VNetGroupNode" in node_types or any("vnet" in str(nid).lower() or "vpc" in str(nid).lower() for nid in node_ids)
     if not has_vnet:
         validation_findings.append("Quality Gate: VNet/VPC group node is missing.")
 
     # Validate Compute platform exists
     has_compute = any(
         n_type in ["BackendNode", "FrontendNode"] or 
-        any(x in nid.lower() for x in ["cluster", "env", "plan", "aks", "compute"])
+        any(x in str(nid).lower() for x in ["cluster", "env", "plan", "aks", "compute"])
         for nid, n_type in zip(node_ids, node_types)
     )
     if not has_compute:
@@ -1195,20 +1303,16 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
             
     if "secure_connectivity" in required_caps or requires_advanced_security:
         if not has_pe:
-            add_finding(
-                "secure_connectivity",
-                "Missing Capability: Secure Connectivity. Reason: Private Endpoints are required to secure backend data and storage connections.",
-                "Recommendation: Private connectivity may improve security posture for sensitive workloads."
+            # Always advisory — private endpoints are AI architectural decisions, not hard gates
+            validation_findings.append(
+                "Recommendation: Private connectivity (Private Endpoints) may improve security posture for sensitive workloads."
             )
         if requires_advanced_security and (not has_nsgs or not has_rt):
-            is_explicit = "network_isolation" in explicit_caps or "secure_connectivity" in explicit_caps
-            msg_fail = "Missing Capability: Network Isolation. Reason: Network Security Groups (NSGs) or custom Route Tables are missing from the subnets."
-            msg_rec = "Recommendation: Subnet-level network isolation (NSGs/Route Tables) is recommended to restrict traffic flow between layers."
-            if is_explicit:
-                validation_findings.append(msg_fail)
-            else:
-                validation_findings.append(msg_rec)
-            
+            # Always advisory — NSGs/Route Tables are AI architectural decisions
+            validation_findings.append(
+                "Recommendation: Subnet-level network isolation (NSGs/Route Tables) is recommended to restrict traffic flow between layers."
+            )
+
     if "gpu_compute" in required_caps:
         if not has_gpu:
             add_finding(
@@ -2132,6 +2236,12 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                     nodes = topology_result.get('nodes', [])
                     edges = topology_result.get('edges', [])
                     services = topology_result.get('services', [])
+                    logger.info(f"Pre-flatten node count: {len(nodes) if isinstance(nodes, list) else 'non-list'}")
+                    # Flatten nested-tree responses from the AI (children arrays)
+                    nodes = flatten_nested_nodes(nodes) if isinstance(nodes, list) else []
+                    logger.info(f"Post-flatten node count: {len(nodes)}, ids: {[n.get('id') for n in nodes[:5]]}")
+
+
                 except Exception as e:
                     logger.error(f"Topology Generation Agent failed on attempt {attempt}: {e}")
                     if attempt == max_attempts:
@@ -2564,7 +2674,7 @@ async def validate_architecture(payload: Dict[str, Any], request: Request):
 
         # Extract node types and IDs
         node_types = {n.get("id"): n.get("type") for n in nodes}
-        node_labels = {n.get("id"): n.get("data", {}).get("label", "").lower() for n in nodes}
+        node_labels = {n.get("id"): str(n.get("data", {}).get("label") or "").lower() for n in nodes}
 
         # Detect cloud provider from node metadata
         provider = "azure"

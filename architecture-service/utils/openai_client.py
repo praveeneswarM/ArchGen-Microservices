@@ -51,12 +51,24 @@ class OpenAIClient:
                 messages=messages,
                 response_format=response_format,
                 temperature=0.2,
-                max_tokens=8000
+                max_tokens=16000
             )
 
             content = response.choices[0].message.content
-            logger.info("Successfully received response from OpenAI.")
-            return SafeJsonParser.parse(content)
+            finish_reason = response.choices[0].finish_reason
+            logger.info(f"Successfully received response from OpenAI. Finish reason: {finish_reason}. Content length: {len(content) if content else 0}")
+            if not content or content.strip() in ("{}", ""):
+                logger.error(f"OpenAI returned empty or trivial response. Raw content: {repr(content[:500] if content else '')}")
+                return {}
+            result = SafeJsonParser.parse(content)
+            # If the result only has one key and its value is a list/dict, unwrap it
+            if isinstance(result, dict) and len(result) == 1:
+                only_val = next(iter(result.values()))
+                if isinstance(only_val, (list, dict)) and not any(k in result for k in ["nodes", "edges", "services"]):
+                    logger.info(f"Unwrapping single-key wrapper response. Keys: {list(result.keys())}")
+                    return only_val
+            return result
+
         except Exception as e:
             logger.error(f"OpenAI API call failed: {e}")
             raise RuntimeError(f"OpenAI request failed: {e}") from e
