@@ -694,6 +694,165 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
     return nodes
 
 
+def normalize_and_validate_ai_topology(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], provider: str, requirements: Any) -> tuple:
+    """
+    Non-mutating validation and normalization layer for Pure AI generated topologies.
+    Applies node type mapping, edge filtering, and required metadata normalization
+    without mutating position (coordinates), parentNode mappings, or container scopes.
+    """
+    ALLOWED_TYPES = {
+        "GatewayNode", "FrontendNode", "BackendNode", "DatabaseNode", "CacheNode", 
+        "StorageNode", "SecurityNode", "MonitoringNode", "RegionGroupNode", 
+        "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"
+    }
+    
+    prov_lower = provider.lower()
+    node_ids = {str(n.get("id")) for n in nodes if n.get("id")}
+    
+    for idx, node in enumerate(nodes):
+        node['data'] = node.get('data') or {}
+        n_id = str(node.get("id", ""))
+        n_id_lower = n_id.lower()
+        lbl_lower = str(node['data'].get("label", "")).lower()
+        n_type = str(node.get("type", ""))
+        
+        # 1. Node Type Normalization
+        if n_type not in ALLOWED_TYPES:
+            mapped_type = "BackendNode"
+            if "pe-" in n_id or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower:
+                mapped_type = "SecurityNode"
+            elif "backup" in n_id or "backup" in lbl_lower:
+                mapped_type = "StorageNode"
+            elif "recovery" in n_id or "recovery" in lbl_lower:
+                mapped_type = "SecurityNode"
+            elif any(x in n_id or x in lbl_lower for x in ["vault", "keyvault", "identity", "role", "waf", "ddos"]):
+                mapped_type = "SecurityNode"
+            elif any(x in n_id or x in lbl_lower for x in ["db-", "database", "postgres", "mysql", "sql", "cosmos"]):
+                mapped_type = "DatabaseNode"
+            elif any(x in n_id or x in lbl_lower for x in ["redis", "cache"]):
+                mapped_type = "CacheNode"
+            elif any(x in n_id or x in lbl_lower for x in ["storage", "blob", "bucket"]):
+                mapped_type = "StorageNode"
+            elif any(x in n_id or x in lbl_lower for x in ["log-analytics", "insights", "monitor", "alert", "diagnostic"]):
+                mapped_type = "MonitoringNode"
+            elif any(x in n_id or x in lbl_lower for x in ["gateway", "firewall", "ingress", "loadbalancer", "lb"]):
+                mapped_type = "GatewayNode"
+            elif any(x in n_id or x in lbl_lower for x in ["frontend", "web", "spa"]):
+                mapped_type = "FrontendNode"
+            
+            node["type"] = mapped_type
+            n_type = mapped_type
+
+        # Enforce Route Tables, NSGs, WAF policies, and Firewalls to be SecurityNode
+        if "rt-" in n_id or "route table" in lbl_lower or "route-table" in lbl_lower:
+            node["type"] = "SecurityNode"
+            n_type = "SecurityNode"
+            node["data"] = node.get("data") or {}
+            if prov_lower == "azure":
+                node["data"]["terraform_resource"] = "azurerm_route_table"
+                node["data"]["typeSubText"] = "azurerm_route_table"
+            elif prov_lower == "aws":
+                node["data"]["terraform_resource"] = "aws_route_table"
+                node["data"]["typeSubText"] = "aws_route_table"
+            else:
+                node["data"]["terraform_resource"] = "google_compute_route"
+                node["data"]["typeSubText"] = "google_compute_route"
+        elif "nsg" in n_id or "nsg" in lbl_lower or "security group" in lbl_lower or "security-group" in lbl_lower:
+            node["type"] = "SecurityNode"
+            n_type = "SecurityNode"
+            node["data"] = node.get("data") or {}
+            if prov_lower == "azure":
+                node["data"]["terraform_resource"] = "azurerm_network_security_group"
+                node["data"]["typeSubText"] = "azurerm_network_security_group"
+            elif prov_lower == "aws":
+                node["data"]["terraform_resource"] = "aws_security_group"
+                node["data"]["typeSubText"] = "aws_security_group"
+            else:
+                node["data"]["terraform_resource"] = "google_compute_firewall"
+                node["data"]["typeSubText"] = "google_compute_firewall"
+        elif "waf" in n_id or "waf" in lbl_lower:
+            node["type"] = "SecurityNode"
+            n_type = "SecurityNode"
+            node["data"] = node.get("data") or {}
+            if prov_lower == "azure":
+                node["data"]["terraform_resource"] = "azurerm_web_application_firewall_policy"
+                node["data"]["typeSubText"] = "azurerm_web_application_firewall_policy"
+            elif prov_lower == "aws":
+                node["data"]["terraform_resource"] = "aws_wafv2_web_acl"
+                node["data"]["typeSubText"] = "aws_wafv2_web_acl"
+            else:
+                node["data"]["terraform_resource"] = "google_compute_security_policy"
+                node["data"]["typeSubText"] = "google_compute_security_policy"
+        elif "firewall" in n_id or "firewall" in lbl_lower:
+            node["type"] = "SecurityNode"
+            n_type = "SecurityNode"
+            node["data"] = node.get("data") or {}
+            if prov_lower == "azure":
+                node["data"]["terraform_resource"] = "azurerm_firewall"
+                node["data"]["typeSubText"] = "azurerm_firewall"
+            elif prov_lower == "aws":
+                node["data"]["terraform_resource"] = "aws_networkfirewall_firewall"
+                node["data"]["typeSubText"] = "aws_networkfirewall_firewall"
+            else:
+                node["data"]["terraform_resource"] = "google_compute_firewall"
+                node["data"]["typeSubText"] = "google_compute_firewall"
+
+        # 2. Metadata Normalization
+        # Strip customMetadata from infrastructure nodes
+        is_infra = False
+        if (
+            "nsg" in n_id_lower or "nsg" in lbl_lower or 
+            "rt-" in n_id_lower or "-rt" in n_id_lower or "route table" in lbl_lower or "route-table" in lbl_lower or
+            "keyvault" in n_id_lower or "vault" in n_id_lower or
+            "pe-" in n_id_lower or "private endpoint" in lbl_lower or "private-endpoint" in lbl_lower or
+            "role-assignment" in n_id_lower or "role assignment" in lbl_lower or
+            n_type in ["SecurityNode", "MonitoringNode"]
+        ):
+            is_infra = True
+
+        if is_infra and "customMetadata" in node['data']:
+            node['data'].pop("customMetadata", None)
+
+        if 'style' not in node or not isinstance(node['style'], dict):
+            node['style'] = {}
+            
+        if 'position' not in node or not isinstance(node['position'], dict):
+            node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
+        else:
+            node['position']['x'] = float(node['position'].get('x', 0.0))
+            node['position']['y'] = float(node['position'].get('y', 0.0))
+
+        # Populate required metadata fields (without changing coordinates or parentNode)
+        node['data']['resource_id'] = node['data'].get('resource_id') or node.get('id', '')
+        node['data']['resource_type'] = node['data'].get('resource_type') or str(node.get('type', 'resource')).lower()
+        if 'terraform_resource' not in node['data']:
+            node['data']['terraform_resource'] = ''
+        node['data']['provider'] = node['data'].get('provider') or provider
+        node['data']['subnet'] = node['data'].get('subnet') or node.get('parentNode', '') or ''
+        node['data']['cost_estimate'] = node['data'].get('cost_estimate') or node['data'].get('cost', '') or ''
+        
+        if 'estimated_monthly_cost' not in node['data']:
+            try:
+                cost_val = float(re.sub(r'[^\d.]', '', str(node['data'].get('cost_estimate', '25'))))
+                node['data']['estimated_monthly_cost'] = cost_val
+            except Exception:
+                node['data']['estimated_monthly_cost'] = 25.0
+        if 'public' not in node['data']:
+            node['data']['public'] = False
+        if 'private' not in node['data']:
+            node['data']['private'] = True
+
+    # 3. Edge Validation (Filter out orphan edges)
+    valid_edges = []
+    for edge in edges:
+        src = edge.get("source")
+        tgt = edge.get("target")
+        if src in node_ids and tgt in node_ids:
+            valid_edges.append(edge)
+            
+    return nodes, valid_edges
+
+
 def rebuild_services_registry(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     # Map node types to service categories
     category_map = {
@@ -1780,9 +1939,6 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                         logger.warning(f"Unknown node type: {raw_type} for node ID: {raw_node.get('id')}")
                         print(f"Unknown node type: {raw_type}")
                     
-                # Ensure all required container nodes exist (if missing, add them, otherwise align them)
-                nodes = ensure_container_nodes(nodes, provider, requirements)
-                
                 # Perform ID alignment for compute engine node
                 compute_type = getattr(requirements, "computeType", None) or getattr(requirements, "application_type", None) or "AKS"
                 compute_type_lower = str(compute_type).lower()
@@ -1796,52 +1952,20 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                     for n in nodes:
                         if str(n.get("id")).lower() == "aks-cluster":
                             n["id"] = compute_target_id
+                        if str(n.get("parentNode")).lower() == "aks-cluster":
+                            n["parentNode"] = compute_target_id
                     for e in edges:
                         if str(e.get("source")).lower() == "aks-cluster":
                             e["source"] = compute_target_id
                         if str(e.get("target")).lower() == "aks-cluster":
                             e["target"] = compute_target_id
 
-                # Snap resources to parent container groups and set relative positions
-                nodes = post_process_nodes(nodes, provider, requirements, edges)
+                # Use non-mutating validation and normalization layer instead of ensure_container_nodes/post_process_nodes
+                nodes, edges = normalize_and_validate_ai_topology(nodes, edges, provider, requirements)
                 
                 post_processed_nodes_count = len(nodes)
                 post_processed_edges_count = len(edges)
-                logger.info(f"Pipeline Stage - Post Processed counts: nodes={post_processed_nodes_count}, edges={post_processed_edges_count}")
-                
-                # Post-process nodes minimally to set positions/types to prevent frontend crash
-                for idx, node in enumerate(nodes):
-                    node_data = node.get('data') or {}
-                    node['data'] = node_data
-                    
-                    if 'position' not in node or not isinstance(node['position'], dict):
-                        node['position'] = {'x': float((idx % 5) * 200), 'y': float((idx // 5) * 150)}
-                    else:
-                        node['position']['x'] = float(node['position'].get('x', 0.0))
-                        node['position']['y'] = float(node['position'].get('y', 0.0))
-                        
-                    if 'style' not in node or not isinstance(node['style'], dict):
-                        node['style'] = {}
-                        
-                    # Populate required metadata fields
-                    node_data['resource_id'] = node_data.get('resource_id') or node.get('id', '')
-                    node_data['resource_type'] = node_data.get('resource_type') or str(node.get('type', 'resource')).lower()
-                    node_data['terraform_resource'] = node_data.get('terraform_resource') or ''
-                    node_data['provider'] = node_data.get('provider') or provider
-                    node_data['subnet'] = node_data.get('subnet') or node.get('parentNode', '') or ''
-                    node_data['cost_estimate'] = node_data.get('cost_estimate') or node_data.get('cost', '') or ''
-                    
-                    # Sanitization of other properties expected by frontend
-                    if 'estimated_monthly_cost' not in node_data:
-                        try:
-                            cost_val = float(re.sub(r'[^\d.]', '', str(node_data.get('cost_estimate', '25'))))
-                            node_data['estimated_monthly_cost'] = cost_val
-                        except Exception:
-                            node_data['estimated_monthly_cost'] = 25.0
-                    if 'public' not in node_data:
-                        node_data['public'] = False
-                    if 'private' not in node_data:
-                        node_data['private'] = True
+                logger.info(f"Pipeline Stage - Normalized AI counts: nodes={post_processed_nodes_count}, edges={post_processed_edges_count}")
                         
                 # Deduplicate shared resources to clean up any duplicates generated by the LLM
                 nodes, edges = deduplicate_shared_resources(nodes, edges)
