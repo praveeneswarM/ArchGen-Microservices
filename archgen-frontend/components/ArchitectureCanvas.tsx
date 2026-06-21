@@ -487,9 +487,16 @@ export default function ArchitectureCanvas({
 
         const next = nds.map((n) => {
           if (n.id === node.id) {
+            const nextData = { ...n.data };
+            if (newParentNodeId && (newParentNodeId.startsWith("subnet-") || newParentNodeId.startsWith("snet-"))) {
+              nextData.subnet = newParentNodeId;
+            } else if (!newParentNodeId) {
+              nextData.subnet = "";
+            }
             return {
               ...n,
               parentNode: newParentNodeId,
+              data: nextData,
               position: {
                 x: absPos.x - parentAbs.x,
                 y: absPos.y - parentAbs.y,

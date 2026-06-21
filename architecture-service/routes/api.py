@@ -1431,7 +1431,7 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
         
         if not is_replica and n_type not in ["RegionGroupNode", "ResourceGroupNode", "VNetGroupNode", "SubnetGroupNode"]:
             if lbl_lower in non_replica_labels:
-                consistency_warnings.append(f"Consistency Gate: Duplicate node label '{lbl}' detected (node IDs: '{non_replica_labels[lbl_lower]}' and '{n_id}').")
+                consistency_warnings.append(f"Advisory: Consistency Gate: Duplicate node label '{lbl}' detected (node IDs: '{non_replica_labels[lbl_lower]}' and '{n_id}').")
             else:
                 non_replica_labels[lbl_lower] = n_id
 
@@ -1440,10 +1440,10 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
         subnet_meta = node.get("data", {}).get("subnet", "")
         if parent:
             if parent not in node_ids:
-                consistency_warnings.append(f"Consistency Gate: Node '{n_id}' references non-existent parentNode '{parent}'.")
+                consistency_warnings.append(f"Advisory: Consistency Gate: Node '{n_id}' references non-existent parentNode '{parent}'.")
             elif parent.startswith("subnet-") or parent.startswith("snet-"):
                 if subnet_meta and subnet_meta != parent:
-                    consistency_warnings.append(f"Consistency Gate: Node '{n_id}' has parentNode '{parent}' but subnet metadata '{subnet_meta}' mismatch.")
+                    consistency_warnings.append(f"Advisory: Consistency Gate: Node '{n_id}' has parentNode '{parent}' but subnet metadata '{subnet_meta}' mismatch.")
 
     return validation_findings + consistency_warnings + complexity_warnings
 
