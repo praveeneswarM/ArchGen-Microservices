@@ -1081,11 +1081,36 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     requires_backup_dr = is_mission_critical or any(s in sensitivity_str for s in ["high", "critical"])
 
     # 1f. Extract Required Capabilities
-    capabilities_raw = get_req_val("required_capabilities")
-    required_caps = []
-    if isinstance(capabilities_raw, list):
-        required_caps = [str(c).lower().strip() for c in capabilities_raw]
+    app_desc = str(get_req_val("app_description", "") or get_req_val("appDescription", "")).lower()
+    notes = str(get_req_val("additional_notes", "") or get_req_val("additionalNotes", "")).lower()
+    raw_user_text = app_desc + " " + notes
 
+    explicit_caps = set()
+    if "upload" in raw_user_text or "file" in raw_user_text or "document" in raw_user_text or "bucket" in raw_user_text or "blob" in raw_user_text or "s3" in raw_user_text:
+        explicit_caps.add("object_storage")
+    if "cache" in raw_user_text or "redis" in raw_user_text:
+        explicit_caps.add("caching")
+    if "secret" in raw_user_text or "vault" in raw_user_text or "credential" in raw_user_text:
+        explicit_caps.add("secrets_management")
+    if "backup" in raw_user_text or "recovery" in raw_user_text or "disaster recovery" in raw_user_text or "dr" in raw_user_text:
+        explicit_caps.add("disaster_recovery")
+    if "private endpoint" in raw_user_text or "private connect" in raw_user_text or "private link" in raw_user_text:
+        explicit_caps.add("secure_connectivity")
+    if "nsg" in raw_user_text or "security group" in raw_user_text or "network isolation" in raw_user_text:
+        explicit_caps.add("network_isolation")
+    if "gpu" in raw_user_text or "cuda" in raw_user_text:
+        explicit_caps.add("gpu_compute")
+    if "queue" in raw_user_text or "message" in raw_user_text or "eventing" in raw_user_text or "servicebus" in raw_user_text or "pubsub" in raw_user_text or "messaging" in raw_user_text:
+        explicit_caps.add("messaging")
+    if "cdn" in raw_user_text or "cloudfront" in raw_user_text or "frontdoor" in raw_user_text or "global distribution" in raw_user_text or "global users" in raw_user_text:
+        explicit_caps.add("global_distribution")
+
+    capabilities_raw = get_req_val("required_capabilities")
+    if isinstance(capabilities_raw, list):
+        for c in capabilities_raw:
+            explicit_caps.add(str(c).lower().strip())
+
+    required_caps = list(explicit_caps)
     if not required_caps:
         # Heuristically derive capabilities if not explicitly passed
         if "upload" in app_desc or "file" in app_desc or "document" in app_desc or "model storage" in app_desc:
@@ -1130,39 +1155,83 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     )
 
     # Validate against capabilities
+    def add_finding(capability_key, msg_fail, msg_recommend):
+        if capability_key in explicit_caps:
+            validation_findings.append(msg_fail)
+        else:
+            validation_findings.append(msg_recommend)
+
     if "object_storage" in required_caps:
         if not has_storage_node:
-            validation_findings.append("Missing Capability: Object Storage. Reason: Application requires file upload/storage capability.")
+            add_finding(
+                "object_storage",
+                "Missing Capability: Object Storage. Reason: Application requires file upload/storage capability.",
+                "Recommendation: Object storage may be beneficial because application requires file upload/storage capability."
+            )
             
     if "caching" in required_caps:
         if not has_cache_node:
-            validation_findings.append("Missing Capability: Caching. Reason: Expected scale or workload caching capability is missing.")
+            add_finding(
+                "caching",
+                "Missing Capability: Caching. Reason: Expected scale or workload caching capability is missing.",
+                "Recommendation: Caching/Redis may improve performance for high concurrent user load."
+            )
             
     if "secrets_management" in required_caps or requires_advanced_security:
         if not has_auth_vault:
-            validation_findings.append("Missing Capability: Secrets Management. Reason: Sensitive credentials/keys vault security is missing.")
+            add_finding(
+                "secrets_management",
+                "Missing Capability: Secrets Management. Reason: Sensitive credentials/keys vault security is missing.",
+                "Recommendation: Secrets management (Key Vault/Secrets Manager) is recommended to secure sensitive credentials."
+            )
             
     if "disaster_recovery" in required_caps or requires_backup_dr:
         if not has_backup:
-            validation_findings.append("Missing Capability: Disaster Recovery. Reason: Backup and recovery strategies are not represented in the architecture.")
+            add_finding(
+                "disaster_recovery",
+                "Missing Capability: Disaster Recovery. Reason: Backup and recovery strategies are not represented in the architecture.",
+                "Recommendation: Disaster Recovery may be beneficial because availability requirements are high."
+            )
             
     if "secure_connectivity" in required_caps or requires_advanced_security:
         if not has_pe:
-            validation_findings.append("Missing Capability: Secure Connectivity. Reason: Private Endpoints are required to secure backend data and storage connections.")
+            add_finding(
+                "secure_connectivity",
+                "Missing Capability: Secure Connectivity. Reason: Private Endpoints are required to secure backend data and storage connections.",
+                "Recommendation: Private connectivity may improve security posture for sensitive workloads."
+            )
         if requires_advanced_security and (not has_nsgs or not has_rt):
-            validation_findings.append("Missing Capability: Network Isolation. Reason: Network Security Groups (NSGs) or custom Route Tables are missing from the subnets.")
+            is_explicit = "network_isolation" in explicit_caps or "secure_connectivity" in explicit_caps
+            msg_fail = "Missing Capability: Network Isolation. Reason: Network Security Groups (NSGs) or custom Route Tables are missing from the subnets."
+            msg_rec = "Recommendation: Subnet-level network isolation (NSGs/Route Tables) is recommended to restrict traffic flow between layers."
+            if is_explicit:
+                validation_findings.append(msg_fail)
+            else:
+                validation_findings.append(msg_rec)
             
     if "gpu_compute" in required_caps:
         if not has_gpu:
-            validation_findings.append("Missing Capability: GPU Compute. Reason: AI inference or GPU-capable compute resources are required.")
+            add_finding(
+                "gpu_compute",
+                "Missing Capability: GPU Compute. Reason: AI inference or GPU-capable compute resources are required.",
+                "Recommendation: GPU compute resources may be beneficial for AI inference workloads."
+            )
             
     if "messaging" in required_caps:
         if not has_messaging:
-            validation_findings.append("Missing Capability: Messaging. Reason: Queuing, message queuing, or eventing service is missing for notifications or async tasks.")
+            add_finding(
+                "messaging",
+                "Missing Capability: Messaging. Reason: Queuing, message queuing, or eventing service is missing for notifications or async tasks.",
+                "Recommendation: Messaging/Eventing may improve scalability for asynchronous workloads."
+            )
             
     if "global_distribution" in required_caps:
         if not has_cdn_node:
-            validation_findings.append("Missing Capability: Global Content Distribution. Reason: CDN or global traffic distribution service is missing for low latency global reach.")
+            add_finding(
+                "global_distribution",
+                "Missing Capability: Global Content Distribution. Reason: CDN or global traffic distribution service is missing for low latency global reach.",
+                "Recommendation: Global content distribution (CDN/Traffic Manager) may improve latency for global users."
+            )
 
     # Fail validation if node renderer cannot resolve a node type
     ALLOWED_TYPES = {
@@ -1447,33 +1516,33 @@ def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[st
     sec_score = 100
     if requires_advanced_security:
         if not has_vault:
-            sec_score -= 25
+            sec_score -= 15
         if not has_pe:
-            sec_score -= 25
+            sec_score -= 10
         if not has_nsgs:
-            sec_score -= 25
+            sec_score -= 10
         if not has_rt:
-            sec_score -= 25
+            sec_score -= 10
     else:
         if "secrets_management" in required_caps and not has_vault:
-            sec_score -= 50
+            sec_score -= 15
         if "secure_connectivity" in required_caps and not has_pe:
-            sec_score -= 50
+            sec_score -= 10
     sec_score = max(0, sec_score)
     
     # Reliability Score (availability & recovery)
     rel_score = 100
     if requires_backup_dr:
         if not has_backup:
-            rel_score -= 50
+            rel_score -= 15
         # If DB exists, it should have replicas
         has_replica = any("replica" in nid or "standby" in nid or "replica" in lbl for nid in node_ids_lower for lbl in node_labels_lower)
         db_nodes = [n for n in nodes if n.get("type") == "DatabaseNode"]
         if has_db and (not has_replica or len(db_nodes) < 2):
-            rel_score -= 50
+            rel_score -= 15
     else:
         if "disaster_recovery" in required_caps and not has_backup:
-            rel_score -= 50
+            rel_score -= 15
     rel_score = max(0, rel_score)
     
     # Scalability Score
@@ -1486,14 +1555,14 @@ def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[st
     
     if is_high_scale:
         if "caching" in required_caps and not has_cache:
-            scal_score -= 30
+            scal_score -= 15
         if not has_hpa:
-            scal_score -= 35
+            scal_score -= 15
         if not has_lb:
-            scal_score -= 35
+            scal_score -= 15
     else:
         if "caching" in required_caps and not has_cache:
-            scal_score -= 50
+            scal_score -= 15
     scal_score = max(0, scal_score)
 
     # Cost Efficiency Score (budget alignment & overengineering checks)
@@ -2149,14 +2218,16 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                 )
                 logger.info(f"Pipeline Stage - Validation findings on attempt {attempt}: {validation_findings}")
                 
-                if not validation_findings:
-                    logger.info(f"Topology successfully validated on Attempt {attempt}")
+                hard_failures = [f for f in validation_findings if not f.startswith("Recommendation:") and not f.startswith("Advisory:")]
+                if not hard_failures:
+                    logger.info(f"Topology successfully validated on Attempt {attempt} (with {len(validation_findings) - len(hard_failures)} advisory recommendations)")
                     break
                 else:
-                    logger.warning(f"Validation failed on Attempt {attempt}. Findings: {validation_findings}")
+                    logger.warning(f"Validation failed on Attempt {attempt} due to hard failures: {hard_failures}")
                     
             # If validation failed after 3 attempts, run the topology healing engine to guarantee valid compileable topology
-            if validation_findings:
+            hard_failures = [f for f in validation_findings if not f.startswith("Recommendation:") and not f.startswith("Advisory:")]
+            if hard_failures:
                 logger.info("Running topology healing engine to resolve validation findings")
                 nodes, edges = heal_topology_gates(nodes, edges, provider, requirements)
                 # Re-run post process to snap any newly injected nodes and align IDs
