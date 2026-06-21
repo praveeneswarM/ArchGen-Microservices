@@ -30,6 +30,16 @@ export interface NodeData {
   typeSubText?: string;
   onLabelChange?: (id: string, label: string) => void;
   id?: string;
+  provider?: string;
+  customMetadata?: Record<string, any>;
+  resource_id?: string;
+  resource_type?: string;
+  terraform_resource?: string;
+  subnet?: string;
+  cost_estimate?: string;
+  estimated_monthly_cost?: number;
+  public?: boolean;
+  private?: boolean;
 }
 
 export interface NodeSchema {

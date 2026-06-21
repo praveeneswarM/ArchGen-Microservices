@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import { RequirementInput } from "../types";
 import { 
   Play, Sparkles, Terminal, Sliders, Cloud, DollarSign, Users, 
-  FileText, Shield, Cpu, Database, Activity, Network, ArrowRight, ArrowLeft 
+  FileText, Shield, Cpu, Database, Activity, Network, ArrowRight, ArrowLeft,
+  ChevronDown, ChevronUp, Info
 } from "lucide-react";
 
 const regionOptions: Record<string, Array<{ value: string; label: string }>> = {
@@ -23,51 +24,67 @@ const regionOptions: Record<string, Array<{ value: string; label: string }>> = {
     { value: "asia-south1", label: "asia-south1 (Mumbai)" },
     { value: "europe-west1", label: "europe-west1 (Belgium)" },
   ],
+  "let ai decide": [
+    { value: "East US", label: "East US / us-east-1" },
+  ]
 };
 
 const computeOptions: Record<string, Array<{ value: string; label: string }>> = {
   azure: [
+    { value: "Let AI Decide", label: "Let AI Decide" },
     { value: "AKS", label: "AKS (Azure Kubernetes Service)" },
-    { value: "VMSS", label: "VMSS (Virtual Machine Scale Set)" },
     { value: "App Service", label: "App Service (PaaS)" },
-    { value: "Azure Functions", label: "Azure Functions (Serverless)" },
     { value: "Container Apps", label: "Container Apps (Microservices)" },
   ],
   aws: [
+    { value: "Let AI Decide", label: "Let AI Decide" },
     { value: "AKS", label: "EKS (Amazon Elastic Kubernetes Service)" },
-    { value: "VMSS", label: "EC2 Auto Scaling Group" },
     { value: "App Service", label: "Elastic Beanstalk (PaaS)" },
-    { value: "Azure Functions", label: "AWS Lambda (Serverless)" },
     { value: "Container Apps", label: "Amazon ECS / Fargate (Microservices)" },
   ],
   gcp: [
+    { value: "Let AI Decide", label: "Let AI Decide" },
     { value: "AKS", label: "GKE (Google Kubernetes Engine)" },
-    { value: "VMSS", label: "Managed Instance Group" },
     { value: "App Service", label: "App Engine (PaaS)" },
-    { value: "Azure Functions", label: "Cloud Functions (Serverless)" },
     { value: "Container Apps", label: "Cloud Run (Microservices)" },
   ],
+  "let ai decide": [
+    { value: "Let AI Decide", label: "Let AI Decide" },
+    { value: "AKS", label: "Kubernetes Engine" },
+    { value: "App Service", label: "App Web Services" },
+    { value: "Container Apps", label: "Containerized Workloads" },
+  ]
 };
 
 const databaseOptions: Record<string, Array<{ value: string; label: string }>> = {
   azure: [
+    { value: "Let AI Decide", label: "Let AI Decide" },
     { value: "PostgreSQL", label: "PostgreSQL (Flexible Server)" },
     { value: "MySQL", label: "MySQL (Flexible Server)" },
     { value: "MongoDB", label: "MongoDB Atlas (NoSQL)" },
     { value: "CosmosDB", label: "CosmosDB (Multi-Model API)" },
   ],
   aws: [
+    { value: "Let AI Decide", label: "Let AI Decide" },
     { value: "PostgreSQL", label: "Amazon RDS for PostgreSQL" },
     { value: "MySQL", label: "Amazon RDS for MySQL" },
     { value: "MongoDB", label: "MongoDB Atlas on AWS" },
     { value: "CosmosDB", label: "Amazon DynamoDB (NoSQL)" },
   ],
   gcp: [
+    { value: "Let AI Decide", label: "Let AI Decide" },
     { value: "PostgreSQL", label: "Cloud SQL for PostgreSQL" },
     { value: "MySQL", label: "Cloud SQL for MySQL" },
     { value: "MongoDB", label: "MongoDB Atlas on GCP" },
     { value: "CosmosDB", label: "Cloud Firestore / Bigtable" },
   ],
+  "let ai decide": [
+    { value: "Let AI Decide", label: "Let AI Decide" },
+    { value: "PostgreSQL", label: "PostgreSQL" },
+    { value: "MySQL", label: "MySQL" },
+    { value: "MongoDB", label: "MongoDB Atlas" },
+    { value: "CosmosDB", label: "NoSQL DB (Dynamo/Cosmos/Firestore)" },
+  ]
 };
 
 interface RequirementFormProps {
@@ -78,15 +95,37 @@ interface RequirementFormProps {
 export default function RequirementForm({ onSubmit, isLoading }: RequirementFormProps) {
   const [step, setStep] = useState(1);
   
-  // Advanced Wizard State
+  // V2 Form State variables
+  // Step 1: Application Information
   const [appName, setAppName] = useState("Enterprise Stack");
+  const [workloadType, setWorkloadType] = useState("SaaS");
   const [appDescription, setAppDescription] = useState(
-    "A scalable SaaS platform with authenticated tenant workspaces, highly secure data boundaries, and global load balancing."
+    "A multi-tenant SaaS platform with authentication, file uploads, reporting dashboards, notifications, audit logs, and third-party integrations."
   );
-  const [workloadType, setWorkloadType] = useState("SaaS Platform");
+
+  // Step 2: Scale & Business Requirements
+  const [expectedUsers, setExpectedUsers] = useState("10K–100K");
+  const [trafficProfile, setTrafficProfile] = useState("Medium");
+  const [growthExpectation, setGrowthExpectation] = useState("Moderate");
+  const [availabilityTarget, setAvailabilityTarget] = useState("High Availability");
+
+  // Step 3: Budget & Compliance
+  const [budget, setBudget] = useState("Small Business");
+  const [complianceList, setComplianceList] = useState<string[]>(["SOC2"]);
+  const [dataSensitivity, setDataSensitivity] = useState("Medium");
+
+  // Step 4: Technology Preferences
   const [cloudProvider, setCloudProvider] = useState("azure");
-  
-  // Networking Section
+  const [computeType, setComputeType] = useState("Let AI Decide");
+  const [dataType, setDataType] = useState("Let AI Decide");
+  const [cache, setCache] = useState("Let AI Decide");
+
+  // Step 5: Strategy
+  const [architectureGoal, setArchitectureGoal] = useState("Balanced");
+  const [aiDecisionLevel, setAiDecisionLevel] = useState("Full AI Control");
+
+  // Advanced settings (default: Hidden)
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [region, setRegion] = useState("East US");
   const [resourceGroup, setResourceGroup] = useState("rg-production");
   const [vnetCIDR, setVnetCIDR] = useState("10.0.0.0/16");
@@ -98,9 +137,22 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
     management: true,
     privateEndpoint: true,
   });
-  
-  // Compute Section
-  const [computeType, setComputeType] = useState("AKS");
+  const [hasWAF, setHasWAF] = useState(true);
+  const [hasFirewall, setHasFirewall] = useState(true);
+  const [hasKeyVault, setHasKeyVault] = useState(true);
+  const [hasManagedIdentity, setHasManagedIdentity] = useState(true);
+  const [hasDDoS, setHasDDoS] = useState(false);
+  const [monitoring, setMonitoring] = useState({
+    azureMonitor: true,
+    logAnalytics: true,
+    appInsights: true,
+    alerts: true,
+    backupVault: true,
+  });
+  const [rto, setRto] = useState("4 hours");
+  const [rpo, setRpo] = useState("1 hour");
+
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleProviderChange = (provider: string) => {
     setCloudProvider(provider);
@@ -109,37 +161,14 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
       setRegion(defaults[0].value);
     }
   };
-  
-  // Data Section
-  const [dataType, setDataType] = useState("PostgreSQL");
-  const [hasStorageAccount, setHasStorageAccount] = useState(true);
-  const [hasRedis, setHasRedis] = useState(true);
-  
-  // Security Section
-  const [hasWAF, setHasWAF] = useState(true);
-  const [hasFirewall, setHasFirewall] = useState(true);
-  const [hasKeyVault, setHasKeyVault] = useState(true);
-  const [hasManagedIdentity, setHasManagedIdentity] = useState(true);
-  const [hasDDoS, setHasDDoS] = useState(false);
-  const [compliance, setCompliance] = useState("SOC2");
-  
-  // Monitoring Section
-  const [monitoring, setMonitoring] = useState({
-    azureMonitor: true,
-    logAnalytics: true,
-    appInsights: true,
-    alerts: true,
-    backupVault: true,
-  });
-  
-  // Cost & SLA Section
-  const [monthlyBudget, setMonthlyBudget] = useState("1200");
-  const [expectedUsers, setExpectedUsers] = useState("100,000 monthly");
-  const [availabilityTarget, setAvailabilityTarget] = useState("99.99%");
-  const [rto, setRto] = useState("4 hours");
-  const [rpo, setRpo] = useState("1 hour");
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const handleComplianceToggle = (std: string) => {
+    if (complianceList.includes(std)) {
+      setComplianceList((prev) => prev.filter((item) => item !== std));
+    } else {
+      setComplianceList((prev) => [...prev, std]);
+    }
+  };
 
   const validateStep = (currentStep: number): boolean => {
     const newErrors: Record<string, string> = {};
@@ -153,23 +182,13 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
       }
     }
 
-    if (currentStep === 2) {
+    if (showAdvanced) {
       if (!resourceGroup.trim() || !/^[a-zA-Z0-9-_]+$/.test(resourceGroup)) {
         newErrors.resourceGroup = "Resource group name must contain only alphanumeric characters, hyphens, or underscores.";
       }
       const cidrPattern = /^([0-9]{1,3}\.){3}[0-9]{1,3}\/[0-9]{1,2}$/;
       if (!vnetCIDR.trim() || !cidrPattern.test(vnetCIDR)) {
         newErrors.vnetCIDR = "Must be a valid VNet IP CIDR block (e.g. 10.0.0.0/16).";
-      }
-    }
-
-    if (currentStep === 5) {
-      const budgetNum = parseInt(monthlyBudget.replace(/[^\d]/g, ""), 10);
-      if (isNaN(budgetNum) || budgetNum <= 0) {
-        newErrors.monthlyBudget = "Monthly budget limit must be a positive number.";
-      }
-      if (!expectedUsers.trim()) {
-        newErrors.expectedUsers = "Expected user load is required.";
       }
     }
 
@@ -192,7 +211,7 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
     e.preventDefault();
     if (!validateStep(step)) return;
     
-    // Construct rich technical details into additional_notes
+    // Construct dynamic subnets
     const subnetDetails = [
       selectedSubnets.ingress && "Ingress: 10.0.1.0/24",
       selectedSubnets.application && "Application: 10.0.2.0/24",
@@ -207,34 +226,43 @@ export default function RequirementForm({ onSubmit, isLoading }: RequirementForm
       .join(", ");
 
     const structuredNotes = `
-[Architecture Brief]
+[Architecture Brief - ArchGen V2]
 Name: ${appName}
-Workload Type: ${workloadType}
+Application Type: ${workloadType}
+Scale & Load: expectedUsers=${expectedUsers}, trafficProfile=${trafficProfile}, growthExpectation=${growthExpectation}
+Availability Requirement: ${availabilityTarget}
+Budget Level: ${budget}
+Compliance Requirements: ${complianceList.join(", ")}
+Data Sensitivity: ${dataSensitivity}
+Technology Preferences:
+  Cloud: ${cloudProvider}
+  Compute Platform: ${computeType}
+  Database: ${dataType}
+  Cache: ${cache}
+Architecture Goal: ${architectureGoal}
+AI Decision Level: ${aiDecisionLevel}
+Advanced Settings Applied: ${showAdvanced}
 Region: ${region}
 Resource Group: ${resourceGroup}
 Primary VNet: ${vnetCIDR}
 Additional VNets: ${additionalVNets || "None"}
 Subnets: ${subnetDetails}
-Compute: ${computeType}
-Database: ${dataType}
-Security Features: WAF=${hasWAF}, Firewall=${hasFirewall}, Key Vault=${hasKeyVault}, Managed Identity=${hasManagedIdentity}, DDoS=${hasDDoS}
-Compliance Standards: ${compliance}
-Monitoring Stack: ${monitoringDetails}
-Availability Target: ${availabilityTarget}
-RTO Target: ${rto}
-RPO Target: ${rpo}
+Security: WAF=${hasWAF}, Firewall=${hasFirewall}, Key Vault=${hasKeyVault}, Managed Identity=${hasManagedIdentity}, DDoS=${hasDDoS}
+Monitoring: ${monitoringDetails}
+RTO: ${rto}
+RPO: ${rpo}
     `.trim();
 
     onSubmit({
       app_description: appDescription,
       expected_users: expectedUsers,
-      monthly_budget: monthlyBudget,
-      cloud_provider: cloudProvider,
+      monthly_budget: budget,
+      cloud_provider: cloudProvider === "Let AI Decide" ? "azure" : cloudProvider,
       additional_notes: structuredNotes,
       application_type: workloadType,
       scalability_preference: expectedUsers,
-      security_level: compliance,
-      database_type: dataType,
+      security_level: complianceList.join(", "),
+      database_type: dataType === "Let AI Decide" ? "PostgreSQL" : dataType,
       projectName: appName,
       region: region,
       availability_target: availabilityTarget,
@@ -242,7 +270,7 @@ RPO Target: ${rpo}
       rpo: rpo,
       resourceGroup: resourceGroup,
       vnetCIDR: vnetCIDR,
-      computeType: computeType,
+      computeType: computeType === "Let AI Decide" ? "AKS" : computeType,
     });
   };
 
@@ -276,7 +304,7 @@ RPO Target: ${rpo}
         {step === 1 && (
           <div className="space-y-4 animate-fade-in">
             <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-2">
-              <FileText className="w-4 h-4 text-cyan-400" /> Application Details
+              <FileText className="w-4 h-4 text-cyan-400" /> 1. Application Information
             </h3>
             
             <div className="flex flex-col gap-1.5">
@@ -294,20 +322,22 @@ RPO Target: ${rpo}
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-400 font-medium">Workload Profile</label>
+              <label className="text-xs text-slate-400 font-medium">Application Type</label>
               <select
                 value={workloadType}
                 onChange={(e) => setWorkloadType(e.target.value)}
                 className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
               >
-                <option value="SaaS Platform">SaaS Platform</option>
-                <option value="Banking System">Banking System</option>
+                <option value="SaaS">SaaS Platform</option>
                 <option value="E-Commerce">E-Commerce</option>
+                <option value="Banking">Banking</option>
                 <option value="Healthcare">Healthcare</option>
-                <option value="IoT Platform">IoT Platform</option>
-                <option value="AI SaaS">AI SaaS</option>
-                <option value="Streaming Platform">Streaming Platform</option>
-                <option value="ERP System">ERP System</option>
+                <option value="Insurance">Insurance</option>
+                <option value="Streaming">Streaming</option>
+                <option value="IoT">IoT Platform</option>
+                <option value="AI Platform">AI Platform</option>
+                <option value="Enterprise Internal Tool">Enterprise Internal Tool</option>
+                <option value="Custom">Custom</option>
               </select>
             </div>
 
@@ -316,9 +346,9 @@ RPO Target: ${rpo}
               <textarea
                 value={appDescription}
                 onChange={(e) => setAppDescription(e.target.value)}
-                rows={4}
+                rows={5}
                 className={`bg-[#0b0f19] border ${errors.appDescription ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors resize-none leading-normal font-sans`}
-                placeholder="Describe your workload, users flows, database triggers..."
+                placeholder="Describe your workload, users flows, security constraints, databases..."
               />
               {errors.appDescription && (
                 <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.appDescription}</span>
@@ -330,7 +360,136 @@ RPO Target: ${rpo}
         {step === 2 && (
           <div className="space-y-4 animate-fade-in">
             <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-2">
-              <Network className="w-4 h-4 text-cyan-400" /> Networking Configuration
+              <Users className="w-4 h-4 text-cyan-400" /> 2. Scale & Business Requirements
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-slate-400 font-medium">Expected Users</label>
+                <select
+                  value={expectedUsers}
+                  onChange={(e) => setExpectedUsers(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="<1K">&lt;1K Users</option>
+                  <option value="1K–10K">1K–10K Users</option>
+                  <option value="10K–100K">10K–100K Users</option>
+                  <option value="100K+">100K+ Users</option>
+                  <option value="Custom">Custom Scale</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-slate-400 font-medium">Traffic Profile</label>
+                <select
+                  value={trafficProfile}
+                  onChange={(e) => setTrafficProfile(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Low">Low Traffic (Quiet workloads)</option>
+                  <option value="Medium">Medium Traffic (Typical SaaS)</option>
+                  <option value="High">High Traffic (Scaling platform)</option>
+                  <option value="Extreme">Extreme Traffic (High concurrency)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-slate-400 font-medium">Growth Expectation</label>
+                <select
+                  value={growthExpectation}
+                  onChange={(e) => setGrowthExpectation(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Stable">Stable Growth</option>
+                  <option value="Moderate">Moderate Scaling</option>
+                  <option value="Rapid">Rapid / Hyper Growth</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-slate-400 font-medium">Availability Requirement</label>
+                <select
+                  value={availabilityTarget}
+                  onChange={(e) => setAvailabilityTarget(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Standard">Standard (99.9% uptime)</option>
+                  <option value="High Availability">High Availability (99.99% multi-zone)</option>
+                  <option value="Mission Critical">Mission Critical (99.999% multi-region)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4 animate-fade-in">
+            <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-2">
+              <DollarSign className="w-4 h-4 text-cyan-400" /> 3. Budget & Compliance
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-slate-400 font-medium">Budget Profile</label>
+                <select
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Startup">Startup Tier (Min cost, Basic SLAs)</option>
+                  <option value="Small Business">Small Business Tier (Balanced cost/HA)</option>
+                  <option value="Enterprise">Enterprise Tier (Premium services, High security)</option>
+                  <option value="Unlimited">Unlimited / High Scale</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-slate-400 font-medium">Data Sensitivity</label>
+                <select
+                  value={dataSensitivity}
+                  onChange={(e) => setDataSensitivity(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Low">Low (Public catalog/docs)</option>
+                  <option value="Medium">Medium (User accounts, logs)</option>
+                  <option value="High">High (PII, user passwords)</option>
+                  <option value="Critical">Critical (Financial data, health vault)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs text-slate-400 font-medium">Compliance Standards (Multi-Select)</label>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {["SOC2", "HIPAA", "PCI DSS", "GDPR", "ISO27001"].map((std) => (
+                  <label
+                    key={std}
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border transition-all cursor-pointer ${
+                      complianceList.includes(std)
+                        ? "bg-cyan-500/10 border-cyan-500 text-cyan-300"
+                        : "bg-white/5 border-white/5 hover:border-white/20 text-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={complianceList.includes(std)}
+                      onChange={() => handleComplianceToggle(std)}
+                      className="hidden"
+                    />
+                    <span className="font-semibold">{std}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="space-y-4 animate-fade-in">
+            <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-2">
+              <Cpu className="w-4 h-4 text-cyan-400" /> 4. Technology Preferences
             </h3>
 
             <div className="grid grid-cols-2 gap-4">
@@ -341,6 +500,7 @@ RPO Target: ${rpo}
                   onChange={(e) => handleProviderChange(e.target.value)}
                   className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
                 >
+                  <option value="Let AI Decide">Let AI Decide</option>
                   <option value="azure">Azure</option>
                   <option value="aws">AWS</option>
                   <option value="gcp">GCP</option>
@@ -348,13 +508,13 @@ RPO Target: ${rpo}
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-medium">Deployment Region</label>
+                <label className="text-xs text-slate-400 font-medium">Compute Platform</label>
                 <select
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value)}
+                  value={computeType}
+                  onChange={(e) => setComputeType(e.target.value)}
                   className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
                 >
-                  {(regionOptions[cloudProvider] || regionOptions.azure).map((opt) => (
+                  {(computeOptions[cloudProvider] || computeOptions["let ai decide"]).map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
@@ -365,199 +525,31 @@ RPO Target: ${rpo}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-medium">Resource Group Name</label>
-                <input
-                  type="text"
-                  value={resourceGroup}
-                  onChange={(e) => setResourceGroup(e.target.value)}
-                  className={`bg-[#0b0f19] border ${errors.resourceGroup ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
-                  placeholder="rg-production"
-                />
-                {errors.resourceGroup && (
-                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.resourceGroup}</span>
-                )}
+                <label className="text-xs text-slate-400 font-medium">Database Core</label>
+                <select
+                  value={dataType}
+                  onChange={(e) => setDataType(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  {(databaseOptions[cloudProvider] || databaseOptions["let ai decide"]).map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-medium">VNet IP Address Space</label>
-                <input
-                  type="text"
-                  value={vnetCIDR}
-                  onChange={(e) => setVnetCIDR(e.target.value)}
-                  className={`bg-[#0b0f19] border ${errors.vnetCIDR ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
-                  placeholder="10.0.0.0/16"
-                />
-                {errors.vnetCIDR && (
-                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.vnetCIDR}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-400 font-medium">Additional VNets (Optional CIDR List)</label>
-              <input
-                type="text"
-                value={additionalVNets}
-                onChange={(e) => setAdditionalVNets(e.target.value)}
-                className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors font-mono"
-                placeholder="10.1.0.0/16, 10.2.0.0/16"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-xs text-slate-400 font-medium">Provision Subnet Zones</label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {Object.entries(selectedSubnets).map(([key, value]) => (
-                  <label key={key} className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
-                    <input
-                      type="checkbox"
-                      checked={value}
-                      onChange={(e) => setSelectedSubnets((prev) => ({ ...prev, [key]: e.target.checked }))}
-                      className="rounded border-slate-700 bg-[#0b0f19] text-cyan-500 focus:ring-0"
-                    />
-                    <span className="capitalize text-slate-300">
-                      {key.replace(/([A-Z])/g, " $1")} Subnet
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-4 animate-fade-in">
-            <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-2">
-              <Cpu className="w-4 h-4 text-cyan-400" /> Compute & Data Layers
-            </h3>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-400 font-medium">Compute Services</label>
-              <select
-                value={computeType}
-                onChange={(e) => setComputeType(e.target.value)}
-                className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
-              >
-                {(computeOptions[cloudProvider] || computeOptions.azure).map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-400 font-medium">Database Core Engine</label>
-              <select
-                value={dataType}
-                onChange={(e) => setDataType(e.target.value)}
-                className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
-              >
-                {(databaseOptions[cloudProvider] || databaseOptions.azure).map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <label className="flex items-center gap-2 p-3 rounded-lg bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30 text-xs">
-                <input
-                  type="checkbox"
-                  checked={hasStorageAccount}
-                  onChange={(e) => setHasStorageAccount(e.target.checked)}
-                  className="rounded border-slate-700 bg-[#0b0f19] text-cyan-500"
-                />
-                <div className="flex flex-col">
-                  <span className="font-semibold text-slate-200">Blob Storage Account</span>
-                  <span className="text-[10px] text-slate-400">Add cloud asset hosting bucket</span>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-2 p-3 rounded-lg bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30 text-xs">
-                <input
-                  type="checkbox"
-                  checked={hasRedis}
-                  onChange={(e) => setHasRedis(e.target.checked)}
-                  className="rounded border-slate-700 bg-[#0b0f19] text-cyan-500"
-                />
-                <div className="flex flex-col">
-                  <span className="font-semibold text-slate-200">Redis Cache Engine</span>
-                  <span className="text-[10px] text-slate-400">High-speed session storage</span>
-                </div>
-              </label>
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="space-y-4 animate-fade-in">
-            <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-2">
-              <Shield className="w-4 h-4 text-cyan-400" /> Security & Monitoring
-            </h3>
-
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
-                <input type="checkbox" checked={hasWAF} onChange={(e) => setHasWAF(e.target.checked)} className="rounded text-cyan-500" />
-                <span className="text-slate-300">WAF (Web Application Firewall)</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
-                <input type="checkbox" checked={hasFirewall} onChange={(e) => setHasFirewall(e.target.checked)} className="rounded text-cyan-500" />
-                <span className="text-slate-300">Network Firewall</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
-                <input type="checkbox" checked={hasKeyVault} onChange={(e) => setHasKeyVault(e.target.checked)} className="rounded text-cyan-500" />
-                <span className="text-slate-300">
-                  {cloudProvider === "aws" ? "AWS Secrets Manager" : cloudProvider === "gcp" ? "Secret Manager" : "Azure Key Vault"}
-                </span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
-                <input type="checkbox" checked={hasManagedIdentity} onChange={(e) => setHasManagedIdentity(e.target.checked)} className="rounded text-cyan-500" />
-                <span className="text-slate-300">Managed Identity (IAM)</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30 col-span-2">
-                <input type="checkbox" checked={hasDDoS} onChange={(e) => setHasDDoS(e.target.checked)} className="rounded text-cyan-500" />
-                <span className="text-slate-300">
-                  {cloudProvider === "aws" ? "AWS Shield Advanced DDoS Protection" : cloudProvider === "gcp" ? "Google Cloud Armor DDoS Protection" : "Azure DDoS Volumetric Protection Plan"}
-                </span>
-              </label>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-400 font-medium">Compliance Standards</label>
-              <select
-                value={compliance}
-                onChange={(e) => setCompliance(e.target.value)}
-                className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
-              >
-                <option value="SOC2">SOC2 Type II</option>
-                <option value="PCI DSS">PCI DSS Compliance (Banking-level)</option>
-                <option value="HIPAA">HIPAA Compliance (Healthcare)</option>
-                <option value="ISO27001">ISO 27001 Standard</option>
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-xs text-slate-400 font-medium">Monitoring & Recovery Vaults</label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {Object.entries(monitoring).map(([key, value]) => (
-                  <label key={key} className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/5 cursor-pointer hover:border-cyan-500/30">
-                    <input
-                      type="checkbox"
-                      checked={value}
-                      onChange={(e) => setMonitoring((prev) => ({ ...prev, [key]: e.target.checked }))}
-                      className="rounded border-slate-700 bg-[#0b0f19] text-cyan-500 focus:ring-0"
-                    />
-                    <span className="capitalize text-slate-300 text-[11px]">
-                      {key === "azureMonitor" 
-                        ? (cloudProvider === "aws" ? "AWS CloudWatch" : cloudProvider === "gcp" ? "Cloud Monitoring" : "Azure Monitor")
-                        : key === "appInsights"
-                        ? (cloudProvider === "aws" ? "AWS X-Ray" : cloudProvider === "gcp" ? "Cloud Trace" : "Application Insights")
-                        : key.replace(/([A-Z])/g, " $1")}
-                    </span>
-                  </label>
-                ))}
+                <label className="text-xs text-slate-400 font-medium">Cache Tier</label>
+                <select
+                  value={cache}
+                  onChange={(e) => setCache(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Let AI Decide">Let AI Decide</option>
+                  <option value="Redis">Redis Cache</option>
+                  <option value="None">None</option>
+                </select>
               </div>
             </div>
           </div>
@@ -566,74 +558,172 @@ RPO Target: ${rpo}
         {step === 5 && (
           <div className="space-y-4 animate-fade-in">
             <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-2">
-              <DollarSign className="w-4 h-4 text-cyan-400" /> Cost Constraints & SLA Targets
+              <Sparkles className="w-4 h-4 text-cyan-400" /> 5. Architecture Strategy
             </h3>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-medium">Monthly Budget Limit ($)</label>
-                <input
-                  type="text"
-                  value={monthlyBudget}
-                  onChange={(e) => setMonthlyBudget(e.target.value)}
-                  className={`bg-[#0b0f19] border ${errors.monthlyBudget ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
-                  placeholder="1200"
-                />
-                {errors.monthlyBudget && (
-                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.monthlyBudget}</span>
-                )}
+                <label className="text-xs text-slate-400 font-medium">Architecture Goal</label>
+                <select
+                  value={architectureGoal}
+                  onChange={(e) => setArchitectureGoal(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Cost Optimized">Cost Optimized (Minimize footprint)</option>
+                  <option value="Balanced">Balanced (Standard enterprise profile)</option>
+                  <option value="Performance Optimized">Performance Optimized (Low latency)</option>
+                  <option value="Enterprise Grade">Enterprise Grade (HA + Strict Compliance)</option>
+                </select>
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-medium">Expected User Load</label>
-                <input
-                  type="text"
-                  value={expectedUsers}
-                  onChange={(e) => setExpectedUsers(e.target.value)}
-                  className={`bg-[#0b0f19] border ${errors.expectedUsers ? "border-rose-500 focus:border-rose-500" : "border-white/10 focus:border-cyan-500"} px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none transition-colors font-mono`}
-                  placeholder="100,000 monthly"
-                />
-                {errors.expectedUsers && (
-                  <span className="text-rose-400 text-[10px] font-mono mt-0.5">{errors.expectedUsers}</span>
-                )}
+                <label className="text-xs text-slate-400 font-medium">AI Decision Level</label>
+                <select
+                  value={aiDecisionLevel}
+                  onChange={(e) => setAiDecisionLevel(e.target.value)}
+                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                  <option value="Full AI Control">Full AI Control (AI designs all layers)</option>
+                  <option value="Guided AI">Guided AI (AI respects technology bounds)</option>
+                  <option value="Manual Override">Manual Override (Strict requirements lock)</option>
+                </select>
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-slate-400 font-medium">Target Availability SLA</label>
-              <select
-                value={availabilityTarget}
-                onChange={(e) => setAvailabilityTarget(e.target.value)}
-                className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+            {/* Advanced Settings Collapsible Toggle */}
+            <div className="mt-4 border border-white/5 rounded-xl bg-[#0b0f19]/30 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="w-full flex items-center justify-between p-3.5 hover:bg-white/5 text-xs text-slate-300 font-mono transition-colors focus:outline-none"
               >
-                <option value="99.9%">99.9% (Standard SLA)</option>
-                <option value="99.99%">99.99% (High Availability - Multi-Zone)</option>
-                <option value="99.999%">99.999% (Mission Critical - Multi-Region)</option>
-              </select>
-            </div>
+                <span className="flex items-center gap-2">
+                  <Network className="w-3.5 h-3.5 text-cyan-400" />
+                  Advanced Settings (Optional Network Isolation)
+                </span>
+                {showAdvanced ? (
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-medium">RTO (Recovery Time Objective)</label>
-                <input
-                  type="text"
-                  value={rto}
-                  onChange={(e) => setRto(e.target.value)}
-                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors font-mono"
-                  placeholder="4 hours"
-                />
-              </div>
+              {showAdvanced && (
+                <div className="p-4 border-t border-white/5 space-y-4 bg-slate-950/20">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] text-slate-400 font-medium font-mono">Deployment Region</label>
+                      <select
+                        value={region}
+                        onChange={(e) => setRegion(e.target.value)}
+                        className="bg-[#0b0f19] border border-white/10 px-2 py-1.5 rounded text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                      >
+                        {(regionOptions[cloudProvider] || regionOptions.azure).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-medium">RPO (Recovery Point Objective)</label>
-                <input
-                  type="text"
-                  value={rpo}
-                  onChange={(e) => setRpo(e.target.value)}
-                  className="bg-[#0b0f19] border border-white/10 px-3 py-2 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors font-mono"
-                  placeholder="1 hour"
-                />
-              </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] text-slate-400 font-medium font-mono">Resource Group</label>
+                      <input
+                        type="text"
+                        value={resourceGroup}
+                        onChange={(e) => setResourceGroup(e.target.value)}
+                        className={`bg-[#0b0f19] border ${errors.resourceGroup ? "border-rose-500" : "border-white/10"} px-2 py-1.5 rounded text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500`}
+                        placeholder="rg-production"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] text-slate-400 font-medium font-mono">VNet CIDR Block</label>
+                      <input
+                        type="text"
+                        value={vnetCIDR}
+                        onChange={(e) => setVnetCIDR(e.target.value)}
+                        className={`bg-[#0b0f19] border ${errors.vnetCIDR ? "border-rose-500" : "border-white/10"} px-2 py-1.5 rounded text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500`}
+                        placeholder="10.0.0.0/16"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] text-slate-400 font-medium font-mono">Additional VNets</label>
+                      <input
+                        type="text"
+                        value={additionalVNets}
+                        onChange={(e) => setAdditionalVNets(e.target.value)}
+                        className="bg-[#0b0f19] border border-white/10 px-2 py-1.5 rounded text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+                        placeholder="10.1.0.0/16"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[10px] text-slate-400 font-medium font-mono">Provision Subnets</label>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                      {Object.entries(selectedSubnets).map(([key, value]) => (
+                        <label key={key} className="flex items-center gap-1.5 p-1.5 rounded bg-white/5 border border-white/5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={value}
+                            onChange={(e) => setSelectedSubnets((prev) => ({ ...prev, [key]: e.target.checked }))}
+                            className="rounded border-slate-700 bg-[#0b0f19] text-cyan-500"
+                          />
+                          <span className="capitalize text-slate-300">
+                            {key.replace(/([A-Z])/g, " $1")} Subnet
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-mono border-t border-white/5 pt-3">
+                    <label className="flex items-center gap-1.5 p-1.5 rounded bg-white/5 border border-white/5 cursor-pointer">
+                      <input type="checkbox" checked={hasWAF} onChange={(e) => setHasWAF(e.target.checked)} className="rounded text-cyan-500" />
+                      <span className="text-slate-300">WAF Policy</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 p-1.5 rounded bg-white/5 border border-white/5 cursor-pointer">
+                      <input type="checkbox" checked={hasFirewall} onChange={(e) => setHasFirewall(e.target.checked)} className="rounded text-cyan-500" />
+                      <span className="text-slate-300">Network Firewall</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 p-1.5 rounded bg-white/5 border border-white/5 cursor-pointer">
+                      <input type="checkbox" checked={hasKeyVault} onChange={(e) => setHasKeyVault(e.target.checked)} className="rounded text-cyan-500" />
+                      <span className="text-slate-300">Secrets Vault</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 p-1.5 rounded bg-white/5 border border-white/5 cursor-pointer">
+                      <input type="checkbox" checked={hasManagedIdentity} onChange={(e) => setHasManagedIdentity(e.target.checked)} className="rounded text-cyan-500" />
+                      <span className="text-slate-300">Managed Identity</span>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-3 text-[10px] font-mono">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-slate-400 font-medium">RTO Target</label>
+                      <input
+                        type="text"
+                        value={rto}
+                        onChange={(e) => setRto(e.target.value)}
+                        className="bg-[#0b0f19] border border-white/10 px-2 py-1 rounded text-slate-200 focus:outline-none"
+                        placeholder="4 hours"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-slate-400 font-medium">RPO Target</label>
+                      <input
+                        type="text"
+                        value={rpo}
+                        onChange={(e) => setRpo(e.target.value)}
+                        className="bg-[#0b0f19] border border-white/10 px-2 py-1 rounded text-slate-200 focus:outline-none"
+                        placeholder="1 hour"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
