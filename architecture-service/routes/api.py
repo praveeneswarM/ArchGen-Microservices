@@ -241,7 +241,7 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
         # Align microservice node IDs to start with 'svc-'
         if edges is not None:
             PROTECTED_COMPUTE_IDS = {
-                "aks-cluster", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", 
+                "aks-cluster", "aks-cluster-group", "aks-system-node-pool", "aks-user-node-pool", "aks-ingress-controller", "aks-hpa", 
                 "app-service-plan", "container-app-env", "container-app-env-group"
             }
             id_mapping = {}
@@ -253,22 +253,25 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
                     if n_id_lower.startswith(prefix):
                         matched_prefix = prefix
                         break
-                if matched_prefix and n_id_lower not in PROTECTED_COMPUTE_IDS:
+                if matched_prefix and n_id_lower not in PROTECTED_COMPUTE_IDS and n.get("type") in ["BackendNode", "FrontendNode"]:
                     new_id = "svc-" + n_id[len(matched_prefix):]
                     id_mapping[n_id] = new_id
                     n["id"] = new_id
                     if "data" in n and isinstance(n["data"], dict):
                         n["data"]["resource_id"] = new_id
             if id_mapping:
+                id_mapping_lower = {k.lower(): v for k, v in id_mapping.items()}
                 for e in edges:
                     src = e.get("source")
                     tgt = e.get("target")
-                    if src in id_mapping:
-                        e["source"] = id_mapping[src]
-                    if tgt in id_mapping:
-                        e["target"] = id_mapping[tgt]
-                    new_src = id_mapping.get(src, src)
-                    new_tgt = id_mapping.get(tgt, tgt)
+                    src_lower = str(src).lower() if src else ""
+                    tgt_lower = str(tgt).lower() if tgt else ""
+                    if src_lower in id_mapping_lower:
+                        e["source"] = id_mapping_lower[src_lower]
+                    if tgt_lower in id_mapping_lower:
+                        e["target"] = id_mapping_lower[tgt_lower]
+                    new_src = e.get("source")
+                    new_tgt = e.get("target")
                     e["id"] = f"e-{new_src}-{new_tgt}"
 
         compute_type = "AKS"
@@ -377,6 +380,61 @@ def post_process_nodes(nodes: List[Dict[str, Any]], provider: str, requirements:
                 
                 node["type"] = mapped_type
                 n_type = mapped_type
+
+            # Enforce Route Tables, NSGs, WAF policies, and Firewalls to be SecurityNode to prevent them from rendering as GatewayNode (Application Gateways)
+            lbl_lower = str(node.get("data", {}).get("label", "")).lower()
+            if "rt-" in n_id or "route table" in lbl_lower or "route-table" in lbl_lower:
+                node["type"] = "SecurityNode"
+                n_type = "SecurityNode"
+                node["data"] = node.get("data") or {}
+                if prov_lower == "azure":
+                    node["data"]["terraform_resource"] = "azurerm_route_table"
+                    node["data"]["typeSubText"] = "azurerm_route_table"
+                elif prov_lower == "aws":
+                    node["data"]["terraform_resource"] = "aws_route_table"
+                    node["data"]["typeSubText"] = "aws_route_table"
+                else:
+                    node["data"]["terraform_resource"] = "google_compute_route"
+                    node["data"]["typeSubText"] = "google_compute_route"
+            elif "nsg" in n_id or "nsg" in lbl_lower or "security group" in lbl_lower or "security-group" in lbl_lower:
+                node["type"] = "SecurityNode"
+                n_type = "SecurityNode"
+                node["data"] = node.get("data") or {}
+                if prov_lower == "azure":
+                    node["data"]["terraform_resource"] = "azurerm_network_security_group"
+                    node["data"]["typeSubText"] = "azurerm_network_security_group"
+                elif prov_lower == "aws":
+                    node["data"]["terraform_resource"] = "aws_security_group"
+                    node["data"]["typeSubText"] = "aws_security_group"
+                else:
+                    node["data"]["terraform_resource"] = "google_compute_firewall"
+                    node["data"]["typeSubText"] = "google_compute_firewall"
+            elif "waf" in n_id or "waf" in lbl_lower:
+                node["type"] = "SecurityNode"
+                n_type = "SecurityNode"
+                node["data"] = node.get("data") or {}
+                if prov_lower == "azure":
+                    node["data"]["terraform_resource"] = "azurerm_web_application_firewall_policy"
+                    node["data"]["typeSubText"] = "azurerm_web_application_firewall_policy"
+                elif prov_lower == "aws":
+                    node["data"]["terraform_resource"] = "aws_wafv2_web_acl"
+                    node["data"]["typeSubText"] = "aws_wafv2_web_acl"
+                else:
+                    node["data"]["terraform_resource"] = "google_compute_security_policy"
+                    node["data"]["typeSubText"] = "google_compute_security_policy"
+            elif "firewall" in n_id or "firewall" in lbl_lower:
+                node["type"] = "SecurityNode"
+                n_type = "SecurityNode"
+                node["data"] = node.get("data") or {}
+                if prov_lower == "azure":
+                    node["data"]["terraform_resource"] = "azurerm_firewall"
+                    node["data"]["typeSubText"] = "azurerm_firewall"
+                elif prov_lower == "aws":
+                    node["data"]["terraform_resource"] = "aws_networkfirewall_firewall"
+                    node["data"]["typeSubText"] = "aws_networkfirewall_firewall"
+                else:
+                    node["data"]["terraform_resource"] = "google_compute_firewall"
+                    node["data"]["typeSubText"] = "google_compute_firewall"
 
             # A. Update Region Node Label
             if n_type == "RegionGroupNode" or "region" in n_id:
@@ -731,16 +789,19 @@ def deduplicate_shared_resources(nodes: List[Dict[str, Any]], edges: List[Dict[s
     
     new_edges = []
     seen_edges = set()
+    node_id_map_lower = {k.lower(): v for k, v in node_id_map.items()}
     for edge in edges:
         src = edge.get("source")
         tgt = edge.get("target")
         
-        new_src = node_id_map.get(src, src)
-        new_tgt = node_id_map.get(tgt, tgt)
+        src_lower = str(src).lower() if src else ""
+        tgt_lower = str(tgt).lower() if tgt else ""
+        new_src = node_id_map_lower.get(src_lower, src)
+        new_tgt = node_id_map_lower.get(tgt_lower, tgt)
         
         if new_src == new_tgt:
             continue
-        edge_key = (new_src, new_tgt)
+        edge_key = (str(new_src).lower(), str(new_tgt).lower())
         if edge_key in seen_edges:
             continue
             
@@ -1268,6 +1329,26 @@ def heal_topology_gates(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
             "data": {"label": "Backup Vault (Recovery)", "provider": provider}
         })
         
+    # 5b. Ensure WAF Policy exists if referenced in edges
+    has_waf = any(
+        t == "SecurityNode" and any(x in nid or x in node_labels.get(nid, "") for x in ["waf", "waf-policy", "waf_policy"])
+        for nid, t in node_types.items()
+    )
+    if not has_waf:
+        referenced_waf = any("waf" in str(e.get("source")).lower() or "waf" in str(e.get("target")).lower() for e in edges)
+        if referenced_waf:
+            nodes.append({
+                "id": "waf-policy",
+                "type": "SecurityNode",
+                "parentNode": "subnet-ingress",
+                "position": {"x": 100.0, "y": 60.0},
+                "data": {"label": "WAF Policy", "subnet": "subnet-ingress", "provider": provider}
+            })
+            # Update collections
+            node_ids.add("waf-policy")
+            node_labels["waf-policy"] = "waf policy"
+            node_types["waf-policy"] = "SecurityNode"
+
     # 6. Ensure Private Endpoints exist and are in subnet-pe
     has_pe = any(
         "pe-" in nid or "pe_" in nid or "private endpoint" in node_labels.get(nid, "")
@@ -1624,6 +1705,18 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             
             logger.info("Starting Pure AI Requirement Analysis")
             analysis = await req_agent.analyze(requirements)
+            if not isinstance(analysis, dict):
+                analysis = {}
+            # Inject raw user requirements explicitly to guarantee the planning agent and topology agent get them properly
+            analysis["projectName"] = requirements.projectName or analysis.get("projectName") or "Enterprise Stack"
+            analysis["region"] = requirements.region or analysis.get("region") or analysis.get("deploymentRegion") or "East US"
+            analysis["resourceGroup"] = requirements.resourceGroup or analysis.get("resourceGroup") or "rg-production"
+            analysis["vnetCIDR"] = requirements.vnetCIDR or analysis.get("vnetCIDR") or "10.0.0.0/16"
+            analysis["computeType"] = requirements.computeType or analysis.get("computeType") or "AKS"
+            analysis["database_type"] = requirements.database_type or analysis.get("database_type") or analysis.get("databaseType") or "PostgreSQL"
+            analysis["cloud_provider"] = requirements.cloud_provider or analysis.get("cloud_provider") or "azure"
+            analysis["monthly_budget"] = requirements.monthly_budget or analysis.get("monthly_budget") or "500"
+            
             logger.info(f"Pipeline Stage: Requirement Analysis Completed. Result: {analysis}")
             
             logger.info("Starting Pure AI Architecture Planning")

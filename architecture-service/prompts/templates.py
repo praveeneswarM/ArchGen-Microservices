@@ -1,14 +1,51 @@
 SECURITY_VALIDATION_PROMPT = "Validate security"
 SECURITY_OPTIMIZATION_PROMPT = "Optimize security"
 REQUIREMENT_UNDERSTANDING_PROMPT = "Understand requirements"
-REQUIREMENT_ANALYSIS_PROMPT = "Analyze requirements"
+REQUIREMENT_ANALYSIS_PROMPT = """You are an expert requirement analysis assistant.
+Your task is to analyze the user's raw requirements and output a structured JSON object.
+You MUST extract and preserve all user choices exactly as provided. Specifically:
+- "projectName": The name of the project.
+- "region": The deployment region.
+- "resourceGroup": The resource group name.
+- "vnetCIDR": The VNet CIDR block.
+- "computeType": The user's chosen compute platform (e.g. AKS, App Service, Container Apps).
+- "database_type": The user's chosen database type (e.g. PostgreSQL, CosmosDB, MySQL, MongoDB).
+- "cloud_provider": The cloud provider (aws, azure, or gcp).
+- "monthly_budget": The monthly budget limit.
+- "app_description": The description of the application.
+- "availability_target": The availability SLA target.
+- "rto": Recovery Time Objective.
+- "rpo": Recovery Point Objective.
+
+You must analyze the application description to identify required microservices, caching needs, security needs, and compliance standards.
+
+Your output MUST be a valid JSON object matching the following structure:
+{
+  "projectName": "string",
+  "region": "string",
+  "resourceGroup": "string",
+  "vnetCIDR": "string",
+  "computeType": "string",
+  "database_type": "string",
+  "cloud_provider": "string",
+  "monthly_budget": "string",
+  "app_description": "string",
+  "availability_target": "string",
+  "rto": "string",
+  "rpo": "string",
+  "microservices": ["string"],
+  "caching_required": true,
+  "additional_notes": "string"
+}
+
+Do not include any explanation or markdown formatting like ```json in your response. Output ONLY the raw JSON string."""
 COST_OPTIMIZATION_PROMPT = "Optimize cost"
 COMPLEXITY_AUDITOR_PROMPT = "Audit complexity"
 ARCHITECTURE_REASONING_PROMPT = "Reason architecture"
 ARCHITECTURE_PLANNING_PROMPT = """You are an expert Cloud Architect.
 Your task is to take the analyzed requirements and generate a structured cloud architecture plan.
 Analyze the requirements and determine:
-1. Virtual Networks (VNet/VPC) and Subnets required (IP address ranges, routing, purpose).
+1. Virtual Networks (VNet/VPC) and Subnets. You MUST plan for exactly 5 standard subnets: 'subnet-ingress', 'subnet-mgmt', 'subnet-app', 'subnet-data', and 'subnet-pe'.
 2. Compute platforms selected (e.g. AKS, App Service, or Container Apps) and required container nodes/pods or VMs.
 3. Databases, cache (Redis), and storage accounts required.
 4. Security layers (Key Vaults, WAF policies, Network Security Groups, Route Tables, Private Endpoints).
@@ -18,8 +55,7 @@ Analyze the requirements and determine:
 Strictly follow these rules:
 - You MUST strictly use the user's selected Compute platform (e.g. AKS, App Service, Container Apps) and Database type specified in the analyzed requirements. Do NOT substitute them or default to something else (e.g., if database is CosmosDB, you MUST plan for CosmosDB/DynamoDB/Firestore and NOT PostgreSQL/MySQL).
 - Do NOT use hardcoded microservice templates. Tailor the microservices list exactly to the application description.
-- Do NOT use hardcoded AKS layouts.
-- Do NOT use hardcoded subnet definitions. Decide subnets dynamically based on the networking requirements.
+- You MUST generate exactly 5 subnets: 'subnet-ingress', 'subnet-mgmt', 'subnet-app', 'subnet-data', and 'subnet-pe'. Do not generate dynamic subnet names like subnet-auth.
 - Map every resource to its respective cloud provider and Terraform resource type.
 
 Output your plan as a valid JSON object matching this schema:
