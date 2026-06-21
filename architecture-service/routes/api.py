@@ -1305,10 +1305,8 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
             
     if "disaster_recovery" in required_caps or requires_backup_dr:
         if not has_backup:
-            add_finding(
-                "disaster_recovery",
-                "Missing Capability: Disaster Recovery. Reason: Backup and recovery strategies are not represented in the architecture.",
-                "Recommendation: Disaster Recovery may be beneficial because availability requirements are high."
+            validation_findings.append(
+                "Recommendation: Disaster Recovery may be beneficial because availability requirements are high. Reason: Backup and recovery strategies are not represented in the architecture."
             )
             
     if "secure_connectivity" in required_caps or requires_advanced_security:
@@ -1333,10 +1331,8 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
             
     if "messaging" in required_caps:
         if not has_messaging:
-            add_finding(
-                "messaging",
-                "Missing Capability: Messaging. Reason: Queuing, message queuing, or eventing service is missing for notifications or async tasks.",
-                "Recommendation: Messaging/Eventing may improve scalability for asynchronous workloads."
+            validation_findings.append(
+                "Recommendation: Messaging/Eventing may improve scalability for asynchronous workloads. Reason: Queuing, message queuing, or eventing service is missing for notifications or async tasks."
             )
             
     if "global_distribution" in required_caps:
