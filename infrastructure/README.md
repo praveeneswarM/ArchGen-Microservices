@@ -60,7 +60,6 @@ infrastructure/terraform/
 │   └── private-endpoints/      # Generic endpoint linking module for PaaS services
 └── environments/               # Environment orchestrator workspaces
     ├── dev/                    # Development (dev.tfstate, 10.10.0.0/16)
-    ├── test/                   # Testing (test.tfstate, 10.20.0.0/16)
     └── prod/                   # Production (prod.tfstate, 10.30.0.0/16)
 ```
 
@@ -115,4 +114,4 @@ infrastructure/helm/
 
 ### Terraform Backend Architecture
 - State files are stored in a dedicated, isolated resource group: **`RG-TFSTATE`**.
-- Uses an Azure Storage Account with GRS (Geo-Redundant Storage), Versioning enabled for state rollback, blob soft delete, and state locking to prevent write conflicts. State configurations are separated into `dev.tfstate`, `test.tfstate`, and `prod.tfstate` files.
+- Uses an Azure Storage Account with GRS (Geo-Redundant Storage), Versioning enabled for state rollback, blob soft delete, and state locking to prevent write conflicts. State configurations are separated into `dev.tfstate` and `prod.tfstate` files.

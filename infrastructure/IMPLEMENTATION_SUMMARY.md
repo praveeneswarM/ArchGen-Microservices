@@ -6,7 +6,7 @@ This document reviews the architectural decisions, structural topologies, securi
 
 ## 1. Generated Infrastructure Resources
 
-The Terraform modular stack provisions the following Azure resources across the three workspaces (`dev`, `test`, `prod`):
+The Terraform modular stack provisions the following Azure resources across the two workspaces (`dev`, `prod`):
 
 *   **Azure Resource Groups**: Separated environment groups (`rg-archgen-dev`, etc.) plus state repository `RG-TFSTATE`.
 *   **Virtual Networks (VNets)**: Dynamically subnetted CIDRs (e.g. `10.10.0.0/16`) with:
