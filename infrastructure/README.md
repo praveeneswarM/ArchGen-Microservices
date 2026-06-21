@@ -96,6 +96,24 @@ infrastructure/k8s/
     ├── values-dev.yaml
     ├── values-prod.yaml
     └── templates/
+
+### Rendered Static Kubernetes Manifests
+The templates are pre-rendered into static, environment-specific Kubernetes manifests under `infrastructure/k8s/manifests/`:
+```
+infrastructure/k8s/manifests/
+├── dev/                        # Rendered dev environment yaml resources
+└── prod/                       # Rendered prod environment yaml resources
+```
+These can be deployed directly to the AKS cluster by running:
+```bash
+kubectl apply -f infrastructure/k8s/manifests/dev/
+# or
+kubectl apply -f infrastructure/k8s/manifests/prod/
+```
+To re-compile the Helm templates into static manifests after modifying override values, run the rendering script:
+```bash
+python infrastructure/k8s/render.py
+```
 ```
 
 ---
