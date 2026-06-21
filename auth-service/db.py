@@ -13,20 +13,34 @@ class DatabaseManager:
 
     async def connect_to_database(self):
         """Creates an asynchronous connection to MongoDB database for auth service."""
+        import asyncio
         logger.info(f"Connecting to MongoDB at: {MONGO_URI}")
         try:
             self.client = AsyncIOMotorClient(
                 MONGO_URI,
                 maxPoolSize=50,
                 minPoolSize=10,
-                serverSelectionTimeoutMS=5000,
+                serverSelectionTimeoutMS=2000,
                 socketTimeoutMS=30000,
             )
             self.db = self.client[DATABASE_NAME]
-            await self.client.admin.command('ping')
-            logger.info("Successfully established connection with MongoDB.")
+            
+            retries = 5
+            for i in range(retries):
+                try:
+                    await self.client.admin.command('ping')
+                    logger.info("Successfully established connection with MongoDB.")
+                    return
+                except Exception as ping_err:
+                    if i < retries - 1:
+                        logger.warning(f"Failed to connect to MongoDB on attempt {i+1}/{retries}: {ping_err}. Retrying in 2 seconds...")
+                        await asyncio.sleep(2)
+                    else:
+                        logger.error(f"Failed to connect to MongoDB after {retries} attempts: {ping_err}. Project persistence disabled (Offline Mock Mode).")
+                        self.client = None
+                        self.db = None
         except Exception as e:
-            logger.error(f"Failed to connect to MongoDB: {e}. Project persistence disabled.")
+            logger.error(f"Failed to initialize MongoDB client: {e}. Project persistence disabled (Offline Mock Mode).")
             self.client = None
             self.db = None
 
