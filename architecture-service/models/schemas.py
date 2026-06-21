@@ -84,6 +84,7 @@ class ArchitectureResponse(BaseModel):
     edge_count: Optional[int] = 0
     subnet_count: Optional[int] = 0
     response_summary: Optional[Dict[str, Any]] = None
+    requirement_coverage_score: Optional[int] = 100
 
 class NodeModel(BaseModel):
     id: str

@@ -1025,7 +1025,7 @@ def _count_real_subnets(nodes: List[Dict[str, Any]]) -> int:
     ])
 
 
-def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], complexity_warnings: List[str] = None, compute_type: str = None, database_type: str = None, provider: str = None) -> List[str]:
+def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], complexity_warnings: List[str] = None, compute_type: str = None, database_type: str = None, provider: str = None, requirements: Any = None) -> List[str]:
     if complexity_warnings is None:
         complexity_warnings = []
     
@@ -1108,6 +1108,99 @@ def validate_and_gate_architecture(nodes: List[Dict[str, Any]], edges: List[Dict
     )
     if not has_pe:
         validation_findings.append("Quality Gate: Private Endpoints (PE) for secure backend database and storage connections are missing.")
+
+    # 1f. Requirement Coverage Quality Gate Checks
+    def get_req_val(key, default=None):
+        if not requirements:
+            return default
+        if isinstance(requirements, dict):
+            return requirements.get(key, default)
+        return getattr(requirements, key, default)
+
+    app_desc = str(get_req_val("app_description", "") or get_req_val("appDescription", "")).lower()
+    app_type = str(get_req_val("application_type", "") or get_req_val("applicationType", "")).lower()
+    workload_profile = str(get_req_val("workload_profile", "")).lower()
+    
+    # Classify the workload profile based on heuristics
+    profile = "general"
+    if "saas" in workload_profile or "saas" in app_type or "saas" in app_desc:
+        profile = "saas"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ecommerce", "e-commerce", "shopping", "store", "payment"]):
+        profile = "e-commerce"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["streaming", "video", "media", "audio", "tv"]):
+        profile = "streaming"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["banking", "finance", "bank", "pci"]):
+        profile = "banking"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ai", "inference", "gpu", "ml", "deep learning", "model hosting"]):
+        profile = "ai"
+
+    node_ids_lower = {str(n.get("id", "")).lower() for n in nodes}
+    node_types_lower = {str(n.get("type", "")).lower() for n in nodes}
+
+    has_db_node = any(t == "databasenode" or "db" in nid or "database" in nid or "postgres" in nid or "mysql" in nid or "cosmos" in nid for nid, t in zip(node_ids_lower, node_types_lower))
+    has_storage_node = any(t == "storagenode" or "storage" in nid or "blob" in nid or "bucket" in nid or "s3" in nid for nid, t in zip(node_ids_lower, node_types_lower))
+    has_cache_node = any(t == "cachenode" or "cache" in nid or "redis" in nid for nid, t in zip(node_ids_lower, node_types_lower))
+    has_cdn_node = any("cdn" in nid or "frontdoor" in nid or "front-door" in nid or "cloudfront" in nid for nid in node_ids_lower)
+    has_auth_vault = any(str(n.get("type", "")).lower() == "securitynode" and any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["vault", "keyvault", "secret", "identity", "auth"]) for n in nodes)
+    has_monitoring_node = any(t == "monitoringnode" or "monitor" in nid or "insights" in nid or "analytics" in nid for nid, t in zip(node_ids_lower, node_types_lower))
+
+    if profile == "saas":
+        if not has_db_node:
+            validation_findings.append("Requirement Coverage: SaaS application requires a database (DatabaseNode) to store tenant metadata.")
+        if not has_storage_node:
+            validation_findings.append("Requirement Coverage: SaaS application requires storage (StorageNode/Blob Storage) for user file uploads.")
+        if not has_auth_vault:
+            validation_findings.append("Requirement Coverage: SaaS application requires an authentication or vault security layer (Key Vault / Secrets Management) for tenant credentials encryption.")
+        if not has_monitoring_node:
+            validation_findings.append("Requirement Coverage: SaaS application requires monitoring (MonitoringNode/Log Analytics) for active tenant usage metrics.")
+
+    elif profile == "e-commerce":
+        if not has_db_node:
+            validation_findings.append("Requirement Coverage: E-Commerce application requires a relational/NoSQL database (DatabaseNode) for inventory and orders.")
+        if not has_cache_node:
+            users_scale = str(get_req_val("expected_users", "") or get_req_val("expectedUsers", "")).lower()
+            if "10k" in users_scale or "100k" in users_scale or "high" in users_scale:
+                validation_findings.append("Requirement Coverage: E-Commerce application requires a caching tier (CacheNode/Redis) to support high concurrent customer shopping traffic.")
+        if not any("payment" in nid or "pay" in nid or "svc-payment" in nid or "gateway" in nid for nid in node_ids_lower):
+            validation_findings.append("Requirement Coverage: E-Commerce application requires payment integration gateway/service nodes.")
+        if not has_monitoring_node:
+            validation_findings.append("Requirement Coverage: E-Commerce application requires monitoring (MonitoringNode) for transaction success tracking.")
+
+    elif profile == "streaming":
+        if not has_storage_node:
+            validation_findings.append("Requirement Coverage: Streaming application requires high-throughput storage (StorageNode/S3/Blob Storage) to host video assets.")
+        if not has_cdn_node:
+            validation_findings.append("Requirement Coverage: Streaming application requires a Content Delivery Network (CDN / Front Door / CloudFront) to cache video segments at the edge.")
+        if not any("gateway" in nid or "lb" in nid or "loadbalancer" in nid or "ingress" in nid for nid in node_ids_lower):
+            validation_findings.append("Requirement Coverage: Streaming application requires a high-scale Ingress Load Balancer / Gateway to route segment requests.")
+
+    elif profile == "banking":
+        if not has_db_node:
+            validation_findings.append("Requirement Coverage: Banking application requires a high-availability database (DatabaseNode).")
+        if not has_auth_vault:
+            validation_findings.append("Requirement Coverage: Banking application requires dedicated Key Management and Secrets Vault (Key Vault / Secrets Manager) to secure financial keys.")
+        if not any("audit" in nid or "log-analytics" in nid or "loganalytics" in nid for nid in node_ids_lower):
+            validation_findings.append("Requirement Coverage: Banking application requires audit logging repository for strict financial operations audit logs.")
+        
+        has_nsg_bank = any("nsg" in nid or "security-group" in nid or "firewall" in nid for nid in node_ids_lower)
+        has_rt_bank = any("rt-" in nid or "route-table" in nid for nid in node_ids_lower)
+        has_pe_bank = any("pe-" in nid or "private endpoint" in str(n.get("data", {}).get("label", "")).lower() for n in nodes)
+        if not (has_nsg_bank and has_rt_bank and has_pe_bank):
+            validation_findings.append("Requirement Coverage: Banking application requires complete network isolation (NSGs, Route Tables, and Private Endpoints) for PCI compliance.")
+
+    elif profile == "ai":
+        if not has_storage_node:
+            validation_findings.append("Requirement Coverage: AI platform requires high-speed model storage (StorageNode/Blob Storage) to host AI model weights.")
+        
+        has_gpu = any(
+            "gpu" in str(n.get("id", "")).lower() or 
+            "gpu" in str(n.get("data", {}).get("label", "")).lower() or 
+            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("pricingTier", "")).lower() or
+            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("vmSize", "")).lower()
+            for n in nodes
+        )
+        if not has_gpu:
+            validation_findings.append("Requirement Coverage: AI GPU workload requires GPU-capable compute resources (AKS GPU nodepool or GPU VM instances).")
 
     # Fail validation if node renderer cannot resolve a node type
     ALLOWED_TYPES = {
@@ -1271,19 +1364,101 @@ def compute_node_cost(node: Dict[str, Any], region: str = "eastus") -> float:
     return round(base, 2)
 
 
-def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], warnings: List[str], provider: str = "azure") -> Dict[str, Any]:
+def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]], warnings: List[str], provider: str = "azure", requirements: Any = None) -> Dict[str, Any]:
     """
-    Calculate 5 completeness scores + overall architecture score:
+    Calculate 6 completeness scores + overall architecture score:
+    - requirement_coverage_score: Starts at 100, drops for missing profile-specific required nodes
     - security_score: Starts at 100, drops for missing vault, WAF, PE, NSGs
     - reliability_score: Drops for missing replicas, backups, HA
     - scalability_score: Drops for missing autoscale, load balancing, caching
     - cost_efficiency_score: Based on total cost and overengineering
     - terraform_alignment_score: Drops for round-trip drift warnings
-    - architecture_score: Weighted average of the above
+    - architecture_score: Weighted average of the above (highest weight on requirement coverage)
     """
     node_ids_lower = {str(n.get("id", "")).lower() for n in nodes}
     node_labels_lower = {str(n.get("data", {}).get("label", "")).lower() for n in nodes}
     
+    # Classify workload profile
+    def get_req_val(key, default=None):
+        if not requirements:
+            return default
+        if isinstance(requirements, dict):
+            return requirements.get(key, default)
+        return getattr(requirements, key, default)
+
+    app_desc = str(get_req_val("app_description", "") or get_req_val("appDescription", "")).lower()
+    app_type = str(get_req_val("application_type", "") or get_req_val("applicationType", "")).lower()
+    workload_profile = str(get_req_val("workload_profile", "")).lower()
+    
+    profile = "general"
+    if "saas" in workload_profile or "saas" in app_type or "saas" in app_desc:
+        profile = "saas"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ecommerce", "e-commerce", "shopping", "store", "payment"]):
+        profile = "e-commerce"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["streaming", "video", "media", "audio", "tv"]):
+        profile = "streaming"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["banking", "finance", "bank", "pci"]):
+        profile = "banking"
+    elif any(x in workload_profile or x in app_type or x in app_desc for x in ["ai", "inference", "gpu", "ml", "deep learning", "model hosting"]):
+        profile = "ai"
+
+    # Identify nodes
+    has_db = any(n.get("type") == "DatabaseNode" or "db" in str(n.get("id", "")).lower() or "database" in str(n.get("id", "")).lower() for n in nodes)
+    has_storage = any(n.get("type") == "StorageNode" or "storage" in str(n.get("id", "")).lower() or "blob" in str(n.get("id", "")).lower() or "bucket" in str(n.get("id", "")).lower() for n in nodes)
+    has_cache = any(n.get("type") == "CacheNode" or "cache" in str(n.get("id", "")).lower() or "redis" in str(n.get("id", "")).lower() for n in nodes)
+    has_cdn = any("cdn" in str(n.get("id", "")).lower() or "frontdoor" in str(n.get("id", "")).lower() or "cloudfront" in str(n.get("id", "")).lower() for n in nodes)
+    has_vault = any(n.get("type") == "SecurityNode" and any(k in str(n.get("id", "")).lower() or k in str(n.get("data", {}).get("label", "")).lower() for k in ["vault", "keyvault", "secret"]) for n in nodes)
+    has_mon = any(n.get("type") == "MonitoringNode" or "monitor" in str(n.get("id", "")).lower() or "insights" in str(n.get("id", "")).lower() or "analytics" in str(n.get("id", "")).lower() for n in nodes)
+    has_compute = any(n.get("type") in ["BackendNode", "FrontendNode"] or "cluster" in str(n.get("id", "")).lower() or "plan" in str(n.get("id", "")).lower() or "env" in str(n.get("id", "")).lower() for n in nodes)
+
+    req_cov_score = 100
+    if profile == "saas":
+        if not has_db: req_cov_score -= 25
+        if not has_storage: req_cov_score -= 20
+        if not has_vault: req_cov_score -= 20
+        if not has_mon: req_cov_score -= 15
+    elif profile == "e-commerce":
+        if not has_db: req_cov_score -= 25
+        if not has_cache:
+            users_scale = str(get_req_val("expected_users", "") or get_req_val("expectedUsers", "")).lower()
+            if "10k" in users_scale or "100k" in users_scale or "high" in users_scale:
+                req_cov_score -= 20
+        if not any("payment" in str(n.get("id", "")).lower() or "pay" in str(n.get("id", "")).lower() or "gateway" in str(n.get("id", "")).lower() for n in nodes):
+            req_cov_score -= 20
+        if not has_mon: req_cov_score -= 15
+    elif profile == "streaming":
+        if not has_storage: req_cov_score -= 25
+        if not has_cdn: req_cov_score -= 25
+        if not any("gateway" in str(n.get("id", "")).lower() or "lb" in str(n.get("id", "")).lower() or "loadbalancer" in str(n.get("id", "")).lower() for n in nodes):
+            req_cov_score -= 20
+    elif profile == "banking":
+        if not has_db: req_cov_score -= 25
+        if not has_vault: req_cov_score -= 25
+        if not any("audit" in str(n.get("id", "")).lower() or "log-analytics" in str(n.get("id", "")).lower() for n in nodes):
+            req_cov_score -= 20
+        has_nsg = any("nsg" in str(n.get("id", "")).lower() or "security-group" in str(n.get("id", "")).lower() or "firewall" in str(n.get("id", "")).lower() for n in nodes)
+        has_rt = any("rt-" in str(n.get("id", "")).lower() or "route-table" in str(n.get("id", "")).lower() for n in nodes)
+        has_pe = any("pe-" in str(n.get("id", "")).lower() or "private endpoint" in str(n.get("data", {}).get("label", "")).lower() for n in nodes)
+        if not (has_nsg and has_rt and has_pe):
+            req_cov_score -= 20
+    elif profile == "ai":
+        if not has_storage: req_cov_score -= 25
+        has_gpu = any(
+            "gpu" in str(n.get("id", "")).lower() or 
+            "gpu" in str(n.get("data", {}).get("label", "")).lower() or 
+            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("pricingTier", "")).lower() or
+            "gpu" in str((n.get("data", {}).get("customMetadata") or {}).get("vmSize", "")).lower()
+            for n in nodes
+        )
+        if not has_gpu:
+            req_cov_score -= 25
+    else:
+        if not has_db: req_cov_score -= 20
+        if not has_compute: req_cov_score -= 25
+        if not has_mon: req_cov_score -= 15
+
+    req_cov_score = max(0, req_cov_score)
+
     # Security Score
     sec_score = 100
     if not any("vault" in nid or "keyvault" in nid for nid in node_ids_lower):
@@ -1336,16 +1511,18 @@ def compute_architecture_scores(nodes: List[Dict[str, Any]], edges: List[Dict[st
     tf_score -= len(tf_drift_warnings) * 15
     tf_score = max(0, tf_score)
     
-    # Architecture Score (weighted average)
+    # Architecture Score (weighted average, with 30% weight on requirement coverage)
     arch_score = int(
-        sec_score * 0.25 +
-        rel_score * 0.20 +
+        req_cov_score * 0.30 +
+        sec_score * 0.20 +
+        rel_score * 0.15 +
         scal_score * 0.15 +
-        cost_score * 0.20 +
-        tf_score * 0.20
+        cost_score * 0.10 +
+        tf_score * 0.10
     )
     
     return {
+        "requirement_coverage_score": req_cov_score,
         "security_score": sec_score,
         "reliability_score": rel_score,
         "scalability_score": scal_score,
@@ -1840,7 +2017,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
             c_edges = [e for e in c_edges if e.get("source") in valid_node_ids and e.get("target") in valid_node_ids]
 
             cached['services'] = rebuild_services_registry(c_nodes)
-            cached['warnings'] = validate_and_gate_architecture(c_nodes, c_edges, cached.get('warnings', []), compute_type=getattr(requirements, 'computeType', None), database_type=getattr(requirements, 'database_type', None))
+            cached['warnings'] = validate_and_gate_architecture(c_nodes, c_edges, cached.get('warnings', []), compute_type=getattr(requirements, 'computeType', None), database_type=getattr(requirements, 'database_type', None), requirements=requirements)
             cached['nodes'] = c_nodes
             cached['node_count'] = len(c_nodes)
             cached['subnet_count'] = _count_real_subnets(c_nodes)
@@ -2021,7 +2198,8 @@ async def generate_architecture(requirements: RequirementInput, request: Request
                     nodes,
                     edges,
                     compute_type=requirements.computeType,
-                    database_type=requirements.database_type
+                    database_type=requirements.database_type,
+                    requirements=analysis
                 )
                 logger.info(f"Pipeline Stage - Validation findings on attempt {attempt}: {validation_findings}")
                 
@@ -2128,7 +2306,8 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         nodes,
         edges,
         compute_type=requirements.computeType,
-        database_type=requirements.database_type
+        database_type=requirements.database_type,
+        requirements=requirements
     )
     
     budget_val = 500.0
@@ -2181,7 +2360,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     exec_ms = int((end_time - start_time) * 1000)
     
     # 5. Architecture Quality Gate (Non-blocking Validation)
-    warnings_list = validate_and_gate_architecture(nodes, edges, complexity_res.get('warnings', []), compute_type=requirements.computeType, database_type=requirements.database_type)
+    warnings_list = validate_and_gate_architecture(nodes, edges, complexity_res.get('warnings', []), compute_type=requirements.computeType, database_type=requirements.database_type, requirements=requirements)
     if len(nodes) < 10:
         warnings_list.append("Architecture generation returned insufficient workload resources.")
         logger.warning("Architecture generation returned insufficient workload resources.")
@@ -2190,7 +2369,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
     
     # 6. Phase 3: AI Validation Agent + Completeness Scores
     ai_recommendations = run_ai_validation_agent(nodes, edges, provider)
-    arch_scores = compute_architecture_scores(nodes, edges, warnings_list, provider)
+    arch_scores = compute_architecture_scores(nodes, edges, warnings_list, provider, requirements=requirements)
     
     # Dynamic cost calculation from individual nodes
     dynamic_total_cost = arch_scores.get("total_estimated_cost", budget_val * 0.8)
@@ -2237,6 +2416,7 @@ async def generate_architecture(requirements: RequirementInput, request: Request
         'operational_overhead_score': int(complexity_res.get('operational_overhead_score', 30)),
         'overengineered': bool(complexity_res.get('overengineered', False)),
         'warnings': warnings_list,
+        'requirement_coverage_score': arch_scores.get('requirement_coverage_score', 100),
         'security_score': arch_scores.get('security_score', int(secured_res.get('security_score', 85))),
         'security_findings': secured_res.get('security_findings', []),
         'compliance_checks': secured_res.get('compliance_checks', []),

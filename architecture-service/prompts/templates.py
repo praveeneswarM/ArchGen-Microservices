@@ -18,6 +18,7 @@ You MUST extract and preserve all user choices exactly as provided. Specifically
 - "rpo": Recovery Point Objective.
 
 You must analyze the application description to identify required microservices, caching needs, security needs, and compliance standards.
+Additionally, classify the workload profile and extract specific functional, security, compliance, scalability, availability, and integration requirements.
 
 Your output MUST be a valid JSON object matching the following structure:
 {
@@ -35,6 +36,13 @@ Your output MUST be a valid JSON object matching the following structure:
   "rpo": "string",
   "microservices": ["string"],
   "caching_required": true,
+  "workload_profile": "string (SaaS | E-Commerce | Streaming | Banking | AI | General)",
+  "functional_requirements": ["string"],
+  "security_requirements": ["string"],
+  "compliance_standards": ["string"],
+  "scalability_requirements": ["string"],
+  "availability_requirements": ["string"],
+  "integration_requirements": ["string"],
   "additional_notes": "string"
 }
 
