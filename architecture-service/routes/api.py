@@ -2597,13 +2597,22 @@ async def generate_terraform(request: TerraformRequest):
             provider=request.cloud_provider
         )
 
+        drift_warnings = rendered.get('warnings', [])
+        # If there is any drift/incompatibility and force_regenerate is False, block compilation and return 400
+        if drift_warnings and not request.force_regenerate:
+            logger.warning(f"Terraform compilation blocked due to drift/incompatibilities: {drift_warnings}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Architecture drift/incompatibilities detected. Findings: {', '.join(drift_warnings)}"
+            )
+
         return TerraformResponse(
             main_tf=rendered.get('main_tf', ''),
             variables_tf=rendered.get('variables_tf', ''),
             outputs_tf=rendered.get('outputs_tf', ''),
             terraform_tfvars=rendered.get('terraform_tfvars', ''),
             instructions=rendered.get('instructions', ''),
-            warnings=rendered.get('warnings', [])
+            warnings=drift_warnings
         )
     except HTTPException:
         raise

@@ -181,6 +181,13 @@ export default function DashboardPage() {
     showToast("success", "Terraform HCL Compiled", "Multi-file Jinja2 templates rendered successfully based on visual node properties.");
   }, [terraform, showToast]);
 
+  // Monitor compilation or infrastructure errors to display toasts
+  useEffect(() => {
+    if (error) {
+      showToast("error", "Infrastructure Error", error);
+    }
+  }, [error, showToast]);
+
   // Requirement Config State
   const [projectName, setProjectName] = useState("Enterprise Stack");
   const [cloudProvider, setCloudProvider] = useState("azure");
@@ -452,6 +459,17 @@ export default function DashboardPage() {
       pushActivity(`Approval failed: ${err.message}`);
     }
   }, [approveArchitecture, pushActivity]);
+
+  const handleForceRegenerate = useCallback(async () => {
+    pushActivity("Force regenerating HCL (bypassing drift check)...");
+    try {
+      await approveArchitecture(null, true);
+      pushActivity("Terraform HCL forced regeneration successful.");
+      showToast("success", "Infrastructure Regenerated", "Terraform configurations compiled successfully, ignoring drift.");
+    } catch (err: any) {
+      pushActivity(`Force regeneration failed: ${err.message}`);
+    }
+  }, [approveArchitecture, pushActivity, showToast]);
 
   const handleLogout = () => {
     localStorage.removeItem("archgen_auth_token");
@@ -1124,7 +1142,13 @@ export default function DashboardPage() {
                   <p className="text-sm text-slate-400 mt-1">Bi-directional synchronization actively links changes in variables to canvas resources.</p>
                 </div>
                 <div className="flex-1 min-h-0">
-                  <TerraformPanel terraform={terraform} isLoading={tfLoading} onCodeChange={handleHclCodeChange} />
+                  <TerraformPanel 
+                    terraform={terraform} 
+                    isLoading={tfLoading} 
+                    onCodeChange={handleHclCodeChange} 
+                    error={error}
+                    onForceRegenerate={handleForceRegenerate}
+                  />
                 </div>
               </div>
             )}

@@ -117,6 +117,7 @@ export interface TerraformRequest {
   edges: EdgeSchema[];
   services: ServiceSchema[];
   cloud_provider: string;
+  force_regenerate?: boolean;
 }
 
 export interface TerraformResponse {

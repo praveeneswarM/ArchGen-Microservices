@@ -191,17 +191,19 @@ export function useArchitecture() {
   }, [enrichNodeData]);
 
   // Compiles HCL and gathers analysis once approved
-  const approveArchitecture = useCallback(async (architectureOverride?: ArchitectureResponse | null) => {
+  const approveArchitecture = useCallback(async (architectureOverride?: ArchitectureResponse | null, forceRegenerate?: boolean) => {
     const activeArchitecture = architectureOverride ?? architecture;
     if (!activeArchitecture) return;
     setIsApproved(true);
     setTfLoading(true);
+    setError(null);
     try {
       const tfPromise = generateTerraform({
         nodes: activeArchitecture.nodes,
         edges: activeArchitecture.edges,
         services: activeArchitecture.services,
-        cloud_provider: activeArchitecture.cloud_provider
+        cloud_provider: activeArchitecture.cloud_provider,
+        force_regenerate: forceRegenerate
       });
       const securityPromise = validateSecurity(activeArchitecture.nodes, activeArchitecture.services);
       const costPromise = optimizeCost(activeArchitecture.nodes, activeArchitecture.services);

@@ -123,6 +123,7 @@ class TerraformRequest(BaseModel):
     edges: List[EdgeModel]
     services: Optional[List[Any]] = []
     cloud_provider: str
+    force_regenerate: Optional[bool] = False
 
 class TerraformResponse(BaseModel):
     main_tf: str
