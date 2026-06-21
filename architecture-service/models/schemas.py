@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -88,26 +89,39 @@ class ArchitectureResponse(BaseModel):
 
 class NodeModel(BaseModel):
     id: str
-    type: str
+    type: Optional[str] = "default"
     data: Dict[str, Any]
     position: Optional[Dict[str, Any]] = None
     parentNode: Optional[str] = None
 
+    model_config = {"extra": "allow"}
+
 class EdgeModel(BaseModel):
-    id: str
+    id: Optional[str] = None          # Auto-generated if not provided
     source: str
     target: str
     animated: Optional[bool] = False
+    description: Optional[str] = None  # Present in AI-generated edges
+    label: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+    def model_post_init(self, __context: Any) -> None:
+        # Auto-generate edge ID from source+target if not provided
+        if not self.id:
+            self.id = f"edge-{self.source}-{self.target}"
 
 class ServiceModel(BaseModel):
-    name: str
-    category: str
-    description: str
+    name: Optional[str] = ""
+    category: Optional[str] = ""
+    description: Optional[str] = ""
+
+    model_config = {"extra": "allow"}
 
 class TerraformRequest(BaseModel):
     nodes: List[NodeModel]
     edges: List[EdgeModel]
-    services: List[ServiceModel]
+    services: Optional[List[Any]] = []
     cloud_provider: str
 
 class TerraformResponse(BaseModel):
@@ -121,5 +135,5 @@ class TerraformResponse(BaseModel):
 class AiAssistRequest(BaseModel):
     nodes: List[NodeModel]
     edges: List[EdgeModel]
-    services: List[ServiceModel]
+    services: Optional[List[Any]] = []
     action: str

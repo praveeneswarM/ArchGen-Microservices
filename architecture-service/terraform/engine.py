@@ -22,15 +22,14 @@ class TerraformEngine:
         
         # Add custom filter to sanitize node IDs for strict Azure/AWS naming rules
         def sanitize_id(value: str) -> str:
-            # Remove all non-alphanumeric chars, lowercased.
-            safe_val = re.sub(r'[^a-z0-9]', '', str(value).lower())
-            # Truncate to 10 chars to prevent max-length violations (like Storage 24-char limit)
-            # Take first 6 and last 4 characters if longer than 10 to preserve prefix and uniqueness.
-            if len(safe_val) > 10:
-                return safe_val[:6] + safe_val[-4:]
-            return safe_val if safe_val else "id"
+            # Replace hyphens with underscores (valid in HCL resource labels)
+            # then remove all other non-alphanumeric chars
+            safe_val = re.sub(r'[^a-z0-9_]', '', str(value).lower().replace('-', '_'))
+            # Truncate to 24 chars max to prevent Azure name length violations
+            return safe_val[:24] if safe_val else "id"
             
         self.env.filters['sanitize_id'] = sanitize_id
+
 
     def _detect_compute_type(self, nodes: List[Dict[str, Any]]) -> str:
         """Auto-detect compute platform from the architecture node list."""
@@ -77,19 +76,28 @@ class TerraformEngine:
         
         # 4. Validate subnet resource existence
         arch_subnets = [n for n in nodes if n.get("type") == "SubnetGroupNode" or str(n.get("id")).startswith("subnet-") or str(n.get("id")).startswith("snet-")]
+        
+        def get_possible_names(sub_id: str) -> List[str]:
+            sub_id = str(sub_id).lower()
+            # 1. New sanitize_id style: replace - with _
+            name1 = re.sub(r'[^a-z0-9_]', '', sub_id.replace('-', '_'))[:24]
+            # 2. Pure alphanumeric style
+            name2 = re.sub(r'[^a-z0-9]', '', sub_id)
+            # 3. Old first-6-last-4 style
+            name3 = name2[:6] + name2[-4:] if len(name2) > 10 else name2
+            return [name1, name2, name3]
+
         if arch_subnets:
             for sub_node in arch_subnets:
                 sub = sub_node.get("id")
-                sanitized = re.sub(r'[^a-z0-9]', '', sub.lower())
-                check_id = sanitized[:6] + sanitized[-4:] if len(sanitized) > 10 else sanitized
-                if check_id not in tf_resource_names and sub.replace("-", "") not in tf_resource_names:
+                possible = get_possible_names(sub)
+                if not any(name in tf_resource_names for name in possible):
                     warnings.append(f"Terraform Drift: Subnet '{sub}' not found in rendered HCL resources.")
         else:
             subnet_names = ["subnet-ingress", "subnet-app", "subnet-data", "subnet-mgmt", "subnet-pe"]
             for sub in subnet_names:
-                sanitized = re.sub(r'[^a-z0-9]', '', sub.lower())
-                check_id = sanitized[:6] + sanitized[-4:] if len(sanitized) > 10 else sanitized
-                if check_id not in tf_resource_names and sub.replace("-", "") not in tf_resource_names:
+                possible = get_possible_names(sub)
+                if not any(name in tf_resource_names for name in possible):
                     warnings.append(f"Terraform Drift: Subnet '{sub}' not found in rendered HCL resources.")
         
         # 5. Check for basic resource count alignment

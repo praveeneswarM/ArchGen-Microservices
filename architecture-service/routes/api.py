@@ -996,9 +996,19 @@ def normalize_and_validate_ai_topology(nodes: List[Dict[str, Any]], edges: List[
     # 3. Edge Validation (Filter out orphan edges)
     valid_edges = []
     for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        # Normalize 'from' and 'to' fields if 'source' or 'target' is missing
+        if "from" in edge and "source" not in edge:
+            edge["source"] = edge["from"]
+        if "to" in edge and "target" not in edge:
+            edge["target"] = edge["to"]
+            
         src = edge.get("source")
         tgt = edge.get("target")
         if src in node_ids and tgt in node_ids:
+            if "id" not in edge or not edge.get("id"):
+                edge["id"] = f"edge-{src}-{tgt}"
             valid_edges.append(edge)
             
     return nodes, valid_edges
@@ -2573,13 +2583,16 @@ async def generate_terraform(request: TerraformRequest):
         services_dict = [svc.model_dump() for svc in request.services]
 
         # Run validation engine as source of truth. Compile only approved architectures.
+        # Only block on hard failures — advisory recommendations (Recommendation:/Advisory: prefix) are non-blocking.
         validation_findings = validate_and_gate_architecture(nodes_dict, edges_dict)
-        if validation_findings:
-            logger.warning(f"Terraform compilation blocked due to validation failures: {validation_findings}")
+        hard_failures = [f for f in validation_findings if not f.startswith("Recommendation:") and not f.startswith("Advisory:")]
+        if hard_failures:
+            logger.warning(f"Terraform compilation blocked due to hard failures: {hard_failures}")
             raise HTTPException(
                 status_code=400,
-                detail=f"Architecture validation failed. Compilation blocked. Findings: {', '.join(validation_findings)}"
+                detail=f"Architecture validation failed. Compilation blocked. Findings: {', '.join(hard_failures)}"
             )
+
 
         rendered = tf_engine.generate(
             nodes=nodes_dict,
