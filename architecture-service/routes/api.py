@@ -2574,9 +2574,9 @@ async def generate_architecture(requirements: RequirementInput, request: Request
 @router.post('/generate-terraform', response_model=TerraformResponse)
 async def generate_terraform(request: TerraformRequest):
     try:
-        nodes_dict = [node.model_dump() for node in request.nodes]
-        edges_dict = [edge.model_dump() for edge in request.edges]
-        services_dict = [svc.model_dump() for svc in request.services]
+        nodes_dict = [node.model_dump() if hasattr(node, "model_dump") else node for node in request.nodes]
+        edges_dict = [edge.model_dump() if hasattr(edge, "model_dump") else edge for edge in request.edges]
+        services_dict = [svc.model_dump() if hasattr(svc, "model_dump") else svc for svc in request.services]
 
         # Run validation engine as source of truth. Compile only approved architectures.
         # Only block on hard failures — advisory recommendations (Recommendation:/Advisory: prefix) are non-blocking.
